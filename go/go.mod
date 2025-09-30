@@ -4,6 +4,7 @@ go 1.23.4
 
 require (
 	github.com/globalpayments/go-sdk v1.1.3
+	github.com/gorilla/mux v1.8.1
 	github.com/joho/godotenv v1.5.1
 )
 

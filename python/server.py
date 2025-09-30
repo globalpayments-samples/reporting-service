@@ -2,7 +2,7 @@
 Global Payments SDK Template - Python Flask
 
 This Flask application provides a starting template for Global Payments SDK integration.
-Customize the endpoints and logic below for your specific use case.
+Includes comprehensive reporting functionality for transaction analytics and data export.
 """
 
 import os
@@ -14,11 +14,26 @@ from globalpayments.api.payment_methods import CreditCardData
 from globalpayments.api.entities import Address
 from globalpayments.api.entities.exceptions import ApiException
 
+# Import reporting routes
+from reports import reports_bp
+
 # Load environment variables
 load_dotenv()
 
 # Initialize application
 app = Flask(__name__, static_folder='.')
+
+# Register reporting blueprint
+app.register_blueprint(reports_bp)
+
+# Add CORS headers
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers to all responses"""
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
 
 def configure_sdk():
     """

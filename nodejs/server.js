@@ -14,6 +14,7 @@ import {
     CreditCardData,
     ApiError
 } from 'globalpayments-api';
+import reportsRouter from './reports.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -124,8 +125,18 @@ app.post('/process-payment', async (req, res) => {
  * - app.get('/transaction/:id', ...) // Get transaction details
  */
 
+/**
+ * Reporting API endpoints
+ * Mount the reporting router at /api/reports
+ * Provides comprehensive transaction reporting and analytics
+ */
+app.use('/api/reports', reportsRouter);
+
 // Start the server
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running at http://localhost:${port}`);
     console.log(`Customize this template for your use case!`);
+    console.log(`\nReporting API endpoints available at:`);
+    console.log(`  http://localhost:${port}/api/reports - API documentation`);
+    console.log(`  http://localhost:${port}/api/reports?action=config - Configuration status`);
 });

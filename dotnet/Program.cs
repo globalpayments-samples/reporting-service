@@ -1,16 +1,18 @@
 using GlobalPayments.Api;
 using GlobalPayments.Api.Entities;
 using GlobalPayments.Api.PaymentMethods;
+using CardPaymentSample.Services;
 using dotenv.net;
 
 namespace CardPaymentSample;
 
 /// <summary>
 /// Card Payment Processing Application
-/// 
+///
 /// This application demonstrates card payment processing using the Global Payments SDK.
 /// It provides endpoints for configuration and payment processing, handling tokenized
-/// card data to ensure secure payment processing.
+/// card data to ensure secure payment processing, along with comprehensive reporting
+/// capabilities.
 /// </summary>
 public class Program
 {
@@ -20,21 +22,45 @@ public class Program
         DotEnv.Load();
 
         var builder = WebApplication.CreateBuilder(args);
-        
+
+        // Add services to the container
+        builder.Services.AddControllers();
+        builder.Services.AddEndpointsApiExplorer();
+
+        // Register the reporting service as a singleton
+        builder.Services.AddSingleton<GlobalPaymentsReportingService>();
+
+        // Add CORS support
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAll", policy =>
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            });
+        });
+
         var app = builder.Build();
 
         // Configure static file serving for the payment form
         app.UseDefaultFiles();
         app.UseStaticFiles();
-        
+
+        // Enable CORS
+        app.UseCors("AllowAll");
+
         // Configure the SDK on startup
         ConfigureGlobalPaymentsSDK();
 
+        // Map controller routes
+        app.MapControllers();
+
         ConfigureEndpoints(app);
-        
+
         var port = System.Environment.GetEnvironmentVariable("PORT") ?? "8000";
         app.Urls.Add($"http://0.0.0.0:{port}");
-        
+
         app.Run();
     }
 
