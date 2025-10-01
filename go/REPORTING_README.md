@@ -1,525 +1,276 @@
-# Global Payments Reporting Service - Go Implementation
+# Global Payments Reporting API - Go
 
-This is a comprehensive Go implementation of the Global Payments reporting service, providing RESTful API endpoints for transaction reporting, analytics, and data export.
+A comprehensive reporting service for Global Payments transactions with search, filtering, analytics, and data export capabilities.
 
-## Overview
+## Quick Start
 
-The Go reporting service is a direct translation of the PHP implementation, providing identical functionality with Go's performance benefits and strong typing. It includes:
+### 1. Configure Environment
 
-- **Transaction Search & Filtering** - Search transactions with multiple filter criteria
-- **Transaction Details** - Retrieve detailed information for specific transactions
-- **Settlement Reports** - Generate settlement reports with summaries
-- **Dispute Management** - Track and manage chargebacks and disputes
-- **Deposit Tracking** - Monitor deposits and funding
-- **Batch Reports** - View batch processing information
-- **Declined Transactions** - Analyze declined transaction patterns
-- **Date Range Reports** - Comprehensive reports across all transaction types
-- **Data Export** - Export data in JSON, CSV, and XML formats
-- **Summary Statistics** - Get aggregate statistics and analytics
+Create a `.env` file in the go directory:
 
-## Files
-
-### Core Service Files
-
-1. **`reporting_service.go`** - Core service implementation
-   - Service class with all reporting methods
-   - SDK integration and configuration
-   - Data formatting and transformation
-   - Export functionality (CSV, XML, JSON)
-
-2. **`reports.go`** - HTTP handler functions
-   - RESTful API endpoints
-   - Request parsing and validation
-   - Response formatting
-   - CORS support
-   - Error handling
-
-3. **`main_reporting.go`** - Example standalone server
-   - Server initialization
-   - Route setup
-   - Configuration
-
-## Architecture
-
-### Service Layer (`reporting_service.go`)
-
-The `ReportingService` struct provides methods for:
-
-```go
-type ReportingService struct {
-    isConfigured bool
-}
-
-// Core methods
-func NewReportingService() (*ReportingService, error)
-func (rs *ReportingService) SearchTransactions(filters map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) GetTransactionDetails(transactionID string) (map[string]interface{}, error)
-func (rs *ReportingService) GetSettlementReport(params map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) GetDisputeReport(filters map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) GetDepositReport(filters map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) GetBatchReport(filters map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) GetDeclinedTransactionsReport(filters map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) GetDateRangeReport(params map[string]interface{}) (map[string]interface{}, error)
-func (rs *ReportingService) ExportTransactions(filters map[string]interface{}, format string) (map[string]interface{}, error)
-func (rs *ReportingService) GetSummaryStats(params map[string]interface{}) (map[string]interface{}, error)
+```properties
+GP_API_APP_ID=your_app_id_here
+GP_API_APP_KEY=your_app_key_here
+GP_API_ENVIRONMENT=TEST  # or PRODUCTION
 ```
 
-### HTTP Handler Layer (`reports.go`)
+### 2. Install Dependencies & Start Server
 
-HTTP handlers that route requests to the service layer:
+```bash
+cd go
+go mod tidy
+go run reporting_service.go reports.go main_reporting.go
+```
 
-- `handleReports` - API documentation endpoint
-- `handleSearch` - Transaction search
-- `handleDetail` - Transaction details
-- `handleSettlement` - Settlement reports
-- `handleExport` - Data export
-- `handleSummary` - Summary statistics
-- `handleDisputes` - Dispute reports
-- `handleDeposits` - Deposit reports
-- `handleBatches` - Batch reports
-- `handleDeclines` - Declined transactions
-- `handleDateRange` - Comprehensive date range reports
-- `handleReportsConfig` - Configuration status
+The API will be available at `http://localhost:8080/reports`
+
+### 3. Verify Configuration
+
+```bash
+curl "http://localhost:8080/reports/config"
+```
 
 ## API Endpoints
 
-### Base Endpoint Styles
+All endpoints use `/reports/{action}` or `/reports?action={action_name}` and support both GET and POST requests.
 
-The service supports two routing styles for compatibility:
+### Search Transactions
 
-1. **REST-style routes** (recommended):
-   - `GET /reports/search?page=1&start_date=2024-01-01`
-   - `GET /reports/detail?transaction_id=TXN123`
+Search and filter transactions with pagination.
 
-2. **Action-based routes** (PHP compatibility):
-   - `GET /reports?action=search&page=1&start_date=2024-01-01`
-   - `GET /reports?action=detail&transaction_id=TXN123`
-
-### Available Endpoints
-
-#### 1. Transaction Search
+```bash
+curl "http://localhost:8080/reports/search?start_date=2025-09-01&end_date=2025-09-30&page_size=20"
 ```
-GET/POST /reports/search
-```
-**Parameters:**
+
+**Parameters**:
 - `page` - Page number (default: 1)
 - `page_size` - Results per page (default: 10, max: 100)
 - `start_date` - Start date (YYYY-MM-DD)
 - `end_date` - End date (YYYY-MM-DD)
 - `transaction_id` - Specific transaction ID
-- `payment_type` - Payment type (sale, refund, authorize, capture)
+- `payment_type` - Payment type filter
 - `status` - Transaction status
 - `amount_min` - Minimum amount
 - `amount_max` - Maximum amount
 - `card_last_four` - Last 4 digits of card
 
-**Example:**
+### Get Transaction Details
+
+Retrieve detailed information for a specific transaction.
+
 ```bash
-curl "http://localhost:8080/reports/search?start_date=2024-01-01&end_date=2024-01-31&page_size=50"
+curl "http://localhost:8080/reports/detail?transaction_id=TRN_123456"
 ```
 
-#### 2. Transaction Details
-```
-GET /reports/detail?transaction_id={id}
-```
-**Parameters:**
-- `transaction_id` - Transaction ID (required)
+**Required**: `transaction_id`
 
-**Example:**
+### Settlement Report
+
+Get settlement information for a date range.
+
 ```bash
-curl "http://localhost:8080/reports/detail?transaction_id=TXN_abc123"
+curl "http://localhost:8080/reports/settlement?start_date=2025-09-01&end_date=2025-09-30"
 ```
 
-#### 3. Settlement Report
-```
-GET/POST /reports/settlement
-```
-**Parameters:**
-- `page` - Page number (default: 1)
-- `page_size` - Results per page (default: 50, max: 100)
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
+**Parameters**:
+- `page`, `page_size` - Pagination
+- `start_date`, `end_date` - Date range
 
-**Example:**
+### Export Transactions
+
+Export transaction data in JSON, CSV, or XML format.
+
+**CSV Export**:
 ```bash
-curl "http://localhost:8080/reports/settlement?start_date=2024-01-01&end_date=2024-01-31"
+curl "http://localhost:8080/reports/export?format=csv&start_date=2025-09-01&end_date=2025-09-30" -o transactions.csv
 ```
 
-#### 4. Export Transactions
-```
-GET/POST /reports/export?format={json|csv|xml}
-```
-**Parameters:**
-- `format` - Export format (json, csv, or xml)
-- All search filters from transaction search
-
-**Example:**
+**XML Export**:
 ```bash
-# Export as CSV
-curl "http://localhost:8080/reports/export?format=csv&start_date=2024-01-01" -o transactions.csv
-
-# Export as XML
-curl "http://localhost:8080/reports/export?format=xml&start_date=2024-01-01" -o transactions.xml
-
-# Export as JSON
-curl "http://localhost:8080/reports/export?format=json&start_date=2024-01-01"
+curl "http://localhost:8080/reports/export?format=xml&start_date=2025-09-01&end_date=2025-09-30" -o transactions.xml
 ```
 
-#### 5. Summary Statistics
-```
-GET/POST /reports/summary
-```
-**Parameters:**
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
-
-**Example:**
+**JSON Export**:
 ```bash
-curl "http://localhost:8080/reports/summary?start_date=2024-01-01&end_date=2024-01-31"
+curl "http://localhost:8080/reports/export?format=json&start_date=2025-09-01&end_date=2025-09-30"
 ```
 
-#### 6. Dispute Report
+**Parameters**:
+- `format` - Export format: `json`, `csv`, or `xml` (required)
+- Plus all search filters
+
+### Summary Statistics
+
+Get aggregate statistics for transactions.
+
+```bash
+curl "http://localhost:8080/reports/summary?start_date=2025-09-01&end_date=2025-09-30"
 ```
-GET/POST /reports/disputes
+
+**Returns**:
+- Total transaction count
+- Total amount
+- Average amount
+- Status breakdown
+- Payment type breakdown
+
+### Dispute Report
+
+Get dispute information with filtering.
+
+```bash
+curl "http://localhost:8080/reports/disputes?start_date=2025-09-01&end_date=2025-09-30"
 ```
-**Parameters:**
-- `page` - Page number (default: 1)
-- `page_size` - Results per page (default: 10, max: 100)
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
+
+**Parameters**:
+- `page`, `page_size` - Pagination
+- `start_date`, `end_date` - Date range
 - `stage` - Dispute stage
 - `status` - Dispute status
 
-**Example:**
+**Get Dispute Details**:
 ```bash
-curl "http://localhost:8080/reports/disputes?start_date=2024-01-01&status=PENDING"
+curl "http://localhost:8080/reports/dispute/DIS_123456"
 ```
 
-#### 7. Dispute Details
-```
-GET /reports/dispute/{id}
-```
-**Example:**
+### Deposit Report
+
+Get deposit information and details.
+
 ```bash
-curl "http://localhost:8080/reports/dispute/DIS_abc123"
+curl "http://localhost:8080/reports/deposits?start_date=2025-09-01&end_date=2025-09-30"
 ```
 
-#### 8. Deposit Report
-```
-GET/POST /reports/deposits
-```
-**Parameters:**
-- `page` - Page number (default: 1)
-- `page_size` - Results per page (default: 10, max: 100)
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
-- `deposit_id` - Specific deposit ID
+**Parameters**:
+- `page`, `page_size` - Pagination
+- `start_date`, `end_date` - Date range
+- `deposit_id` - Filter by deposit ID
 - `status` - Deposit status
 
-**Example:**
+**Get Deposit Details**:
 ```bash
-curl "http://localhost:8080/reports/deposits?start_date=2024-01-01"
+curl "http://localhost:8080/reports/deposit/DEP_123456"
 ```
 
-#### 9. Deposit Details
-```
-GET /reports/deposit/{id}
-```
-**Example:**
+### Declined Transactions Report
+
+Get declined transactions with analysis.
+
 ```bash
-curl "http://localhost:8080/reports/deposit/DEP_abc123"
+curl "http://localhost:8080/reports/declines?start_date=2025-09-01&end_date=2025-09-30"
 ```
 
-#### 10. Batch Report
-```
-GET/POST /reports/batches
-```
-**Parameters:**
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
+**Returns** transaction data plus decline analysis:
+- Decline reasons breakdown
+- Card type breakdown
+- Hourly decline patterns
 
-**Example:**
+### Comprehensive Date Range Report
+
+Get a combined report across all transaction types.
+
 ```bash
-curl "http://localhost:8080/reports/batches?start_date=2024-01-01"
+curl "http://localhost:8080/reports/date-range?start_date=2025-09-01&end_date=2025-09-30&transaction_limit=100"
 ```
 
-#### 11. Declined Transactions
-```
-GET/POST /reports/declines
-```
-**Parameters:**
-- All search parameters plus decline analysis
-
-**Example:**
-```bash
-curl "http://localhost:8080/reports/declines?start_date=2024-01-01&end_date=2024-01-31"
-```
-
-#### 12. Date Range Report
-```
-GET/POST /reports/date-range
-```
-**Parameters:**
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
+**Parameters**:
+- `start_date`, `end_date` - Date range
 - `transaction_limit` - Max transactions (default: 100, max: 1000)
 - `settlement_limit` - Max settlements (default: 50, max: 500)
 - `dispute_limit` - Max disputes (default: 25, max: 100)
 - `deposit_limit` - Max deposits (default: 25, max: 100)
 
-**Example:**
-```bash
-curl "http://localhost:8080/reports/date-range?start_date=2024-01-01&end_date=2024-01-31"
-```
+**Returns**:
+- Transactions
+- Settlements
+- Disputes
+- Deposits
+- Comprehensive summary
 
-#### 13. Configuration Status
-```
-GET /reports/config
-```
-**Example:**
-```bash
-curl "http://localhost:8080/reports/config"
-```
+### Batch Report
 
-## Setup and Configuration
-
-### 1. Environment Variables
-
-Create a `.env` file with your Global Payments credentials:
-
-```env
-# GP-API Credentials (for reporting)
-GP_API_APP_ID=your_app_id_here
-GP_API_APP_KEY=your_app_key_here
-
-# Server Configuration
-PORT=8080
-```
-
-### 2. Install Dependencies
+Get batch report information.
 
 ```bash
-cd go
-go mod tidy
-```
-
-This will install:
-- `github.com/globalpayments/go-sdk` - Global Payments SDK
-- `github.com/gorilla/mux` - HTTP router
-- `github.com/joho/godotenv` - Environment variable loader
-
-### 3. Run the Server
-
-#### Standalone Reporting Server:
-```bash
-go run reporting_service.go reports.go main_reporting.go
-```
-
-#### Integration with Existing Server:
-Add to your existing `main.go`:
-
-```go
-import (
-    "github.com/gorilla/mux"
-)
-
-func main() {
-    router := mux.NewRouter()
-
-    // Initialize reporting API
-    if err := InitializeReportingAPI(router); err != nil {
-        log.Fatal(err)
-    }
-
-    // Your other routes...
-
-    http.ListenAndServe(":8080", router)
-}
-```
-
-### 4. Verify Configuration
-
-```bash
-curl http://localhost:8080/reports/config
-```
-
-Should return:
-```json
-{
-  "success": true,
-  "data": {
-    "sdk_status": {
-      "configured": true,
-      "has_app_id": true,
-      "has_app_key": true,
-      "environment": "TEST"
-    },
-    "environment_validation": {
-      "valid": true,
-      "errors": [],
-      "warnings": []
-    }
-  }
-}
+curl "http://localhost:8080/reports/batches?start_date=2025-09-01&end_date=2025-09-30"
 ```
 
 ## Response Format
 
-All endpoints return a standardized JSON response:
+### Success Response
 
-### Success Response:
 ```json
 {
   "success": true,
   "data": {
-    // Response data
+    "transactions": [...],
+    "pagination": {
+      "page": 1,
+      "page_size": 10,
+      "total_count": 42
+    }
   },
-  "timestamp": "2024-01-15 12:34:56"
+  "timestamp": "2025-10-01 12:00:00"
 }
 ```
 
-### Error Response:
+### Error Response
+
 ```json
 {
   "success": false,
   "error": {
     "code": "ERROR_CODE",
     "message": "Error description",
-    "timestamp": "2024-01-15 12:34:56"
-  },
-  "timestamp": "2024-01-15 12:34:56"
+    "timestamp": "2025-10-01 12:00:00"
+  }
 }
 ```
 
-## Error Codes
+## Common Use Cases
 
-- `VALIDATION_ERROR` - Invalid parameters or missing required fields
-- `API_ERROR` - Global Payments API error
-- `PARSE_ERROR` - Request parsing error
-- `INTERNAL_ERROR` - Internal server error
-
-## Data Structures
-
-### TransactionInfo
-```go
-type TransactionInfo struct {
-    TransactionID   string  `json:"transaction_id"`
-    Timestamp       string  `json:"timestamp"`
-    Amount          float64 `json:"amount"`
-    Currency        string  `json:"currency"`
-    Status          string  `json:"status"`
-    PaymentMethod   string  `json:"payment_method"`
-    CardLastFour    string  `json:"card_last_four"`
-    AuthCode        string  `json:"auth_code"`
-    ReferenceNumber string  `json:"reference_number"`
-}
-```
-
-### Pagination
-```go
-type Pagination struct {
-    Page       int `json:"page"`
-    PageSize   int `json:"page_size"`
-    TotalCount int `json:"total_count"`
-}
-```
-
-## Testing
-
-### Example Test Script
+### Daily Transaction Report
 
 ```bash
-#!/bin/bash
-
-BASE_URL="http://localhost:8080"
-
-# Test configuration
-echo "Testing configuration..."
-curl -s "$BASE_URL/reports/config" | jq
-
-# Test transaction search
-echo -e "\nTesting transaction search..."
-curl -s "$BASE_URL/reports/search?start_date=2024-01-01&page_size=5" | jq
-
-# Test summary statistics
-echo -e "\nTesting summary statistics..."
-curl -s "$BASE_URL/reports/summary?start_date=2024-01-01&end_date=2024-01-31" | jq
-
-# Test export
-echo -e "\nTesting CSV export..."
-curl -s "$BASE_URL/reports/export?format=csv&start_date=2024-01-01" -o transactions.csv
-echo "Exported to transactions.csv"
+curl "http://localhost:8080/reports/summary?start_date=2025-09-30&end_date=2025-09-30"
 ```
 
-## Deployment
+### Find Specific Transaction
 
-### Docker
-
-Create a `Dockerfile`:
-
-```dockerfile
-FROM golang:1.23-alpine AS builder
-
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . .
-RUN go build -o reporting-service reporting_service.go reports.go main_reporting.go
-
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-
-WORKDIR /root/
-COPY --from=builder /app/reporting-service .
-COPY .env .
-
-EXPOSE 8080
-CMD ["./reporting-service"]
-```
-
-Build and run:
 ```bash
-docker build -t gp-reporting-service .
-docker run -p 8080:8080 --env-file .env gp-reporting-service
+curl "http://localhost:8080/reports/search?transaction_id=TRN_abc123"
 ```
 
-### Production Considerations
+### Export Monthly Transactions
 
-1. **Environment**: Change `environment.TEST` to `environment.PRODUCTION` in `reporting_service.go`
-2. **Security**: Use proper secrets management for API credentials
-3. **Logging**: Add comprehensive logging for production monitoring
-4. **Rate Limiting**: Implement rate limiting for API endpoints
-5. **Authentication**: Add authentication/authorization middleware
-6. **HTTPS**: Use TLS certificates for secure communication
+```bash
+curl "http://localhost:8080/reports/export?format=csv&start_date=2025-09-01&end_date=2025-09-30" -o september_transactions.csv
+```
 
-## Differences from PHP Implementation
+### Analyze Declines
 
-1. **Strong Typing**: Go's type system provides compile-time safety
-2. **Performance**: Generally faster execution and lower memory usage
-3. **Concurrency**: Built-in goroutines for concurrent operations
-4. **Error Handling**: Explicit error returns vs PHP exceptions
-5. **Routing**: Using gorilla/mux instead of query parameters
-6. **SDK Integration**: Direct Go SDK calls vs PHP SDK
+```bash
+curl "http://localhost:8080/reports/declines?start_date=2025-09-01&end_date=2025-09-30"
+```
 
-## TODO / Implementation Notes
+### Check Settlement Status
 
-The current implementation includes complete handler structure and API routing. Some areas that need completion based on actual SDK response structures:
+```bash
+curl "http://localhost:8080/reports/settlement?start_date=2025-09-30"
+```
 
-1. **SDK Response Parsing**: The `formatTransactionList`, `formatSettlementList`, etc. functions need to be completed based on actual SDK response types from the Global Payments Go SDK.
+## Notes
 
-2. **Type Assertions**: Some type conversions in the formatting functions should be updated once the exact SDK response structures are known.
+- **Date Format**: All dates must be in `YYYY-MM-DD` format
+- **Pagination**: Page size is limited to 100 items maximum
+- **Export Limits**: Exports are capped at 1000 transactions
+- **Timestamps**: All response timestamps use `YYYY-MM-DD HH:mm:ss` format
+- **CORS**: Enabled for cross-origin requests
 
-3. **Additional Validation**: May need additional validation based on specific business requirements.
+## API Documentation
 
-These TODOs are marked in the code with `// TODO:` comments.
+View complete API documentation:
 
-## Support
-
-For issues or questions:
-- Global Payments SDK: https://github.com/globalpayments/go-sdk
-- Go Documentation: https://golang.org/doc/
-
-## License
-
-MIT License - See LICENSE file for details
+```bash
+curl http://localhost:8080/reports
+```

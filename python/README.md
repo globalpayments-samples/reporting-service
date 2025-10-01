@@ -1,6 +1,6 @@
-# Python Card Payment Example
+# Global Payments Python Integration
 
-This example demonstrates card payment processing using Flask and the Global Payments SDK.
+A comprehensive Python implementation for Global Payments payment processing and transaction reporting using Flask and the Global Payments Python SDK.
 
 ## Requirements
 
@@ -8,114 +8,202 @@ This example demonstrates card payment processing using Flask and the Global Pay
 - pip (Python Package Installer)
 - Global Payments account and API credentials
 
-## Project Structure
+## Quick Start
 
-- `server.py` - Main application file containing server setup and payment processing
-- `index.html` - Client-side payment form
-- `requirements.txt` - Project dependencies
-- `.env.sample` - Template for environment variables
-- `run.sh` - Convenience script to run the application
+### 1. Configure Credentials
 
-## Setup
+Copy `.env.sample` to `.env` and add your credentials:
 
-1. Clone this repository
-2. Copy `.env.sample` to `.env`
-3. Update `.env` with your Global Payments credentials:
-   ```
-   PUBLIC_API_KEY=pk_test_xxx
-   SECRET_API_KEY=sk_test_xxx
-   ```
-4. Create and activate a virtual environment (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows, use: venv\Scripts\activate
-   ```
-5. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-6. Run the application:
-   ```bash
-   ./run.sh
-   ```
-   Or manually:
-   ```bash
-   python server.py
-   ```
+```properties
+# Payment Processing (Portico API)
+PUBLIC_API_KEY=pkapi_cert_your_public_key
+SECRET_API_KEY=skapi_cert_your_secret_key
 
-## Implementation Details
+# Transaction Reporting (GP-API)
+GP_API_APP_ID=your_app_id_here
+GP_API_APP_KEY=your_app_key_here
+GP_API_ENVIRONMENT=TEST  # or PRODUCTION
+```
 
-### Server Setup
-The application uses Flask to create a web server that:
-- Serves static files
-- Processes payment requests
-- Provides configuration endpoint for client-side SDK
-- Handles JSON responses
+### 2. Create Virtual Environment (Recommended)
 
-### SDK Configuration
-Global Payments SDK configuration using environment variables:
-- Loads credentials from .env file
-- Sets up service URL for API communication
-- Configures developer identification
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-### Payment Processing
-Payment processing flow:
-1. Client submits payment token and billing zip
-2. Server creates CreditCardData with token
-3. Creates Address with postal code
-4. Processes $10 USD charge
-5. Returns success/error response
+### 3. Install Dependencies
 
-### Error Handling
-Implements comprehensive error handling:
-- Catches and processes API exceptions
-- Returns JSON responses for errors
-- Includes appropriate HTTP status codes
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Start the Server
+
+```bash
+./run.sh
+```
+
+Or manually:
+```bash
+python server.py
+```
+
+The application will start on `http://localhost:8000`
+
+### 5. Verify Setup
+
+Open your browser to:
+- **Web Interface**: http://localhost:8000/index.html
+- **Get Public Key**: http://localhost:8000/config
+- **Reporting Config**: http://localhost:8000/reports?action=config
+
+## Features
+
+### ✅ Payment Processing
+- Process card payments with hosted fields tokenization
+- Support for billing address verification (AVS)
+- Real-time payment processing with Global Payments Portico API
+
+### ✅ Transaction Reporting
+- Search and filter transactions
+- Export data (JSON, CSV, XML)
+- Generate settlement, dispute, and deposit reports
+- Transaction analytics and summaries
 
 ## API Endpoints
 
-### GET /config
-Returns public API key for client-side SDK initialization.
+### Payment Processing
 
-Response:
-```json
-{
-    "publicApiKey": "pk_test_xxx"
-}
+**Get Configuration**
+```bash
+curl http://localhost:8000/config
 ```
 
-### POST /process-payment
-Processes a payment using the provided token and billing information.
-
-Request Parameters:
-- `payment_token` (string, required) - Token from client-side SDK
-- `billing_zip` (string, required) - Billing postal code
-
-Response (Success):
-```json
-{
-    "success": true,
-    "message": "Payment successful! Transaction ID: xxx"
-}
+**Process Payment**
+```bash
+curl -X POST http://localhost:8000/process-payment \
+  -H "Content-Type: application/json" \
+  -d '{"payment_token":"YOUR_TOKEN","billing_zip":"12345","amount":"25.00"}'
 ```
 
-Response (Error):
-```json
-{
-    "success": false,
-    "message": "Error: [error message]"
-}
+### Transaction Reporting
+
+See [REPORTING_README.md](REPORTING_README.md) for complete reporting API documentation.
+
+**Quick Example - Search Transactions**
+```bash
+curl "http://localhost:8000/reports?action=search&start_date=2025-09-01&page_size=10"
 ```
 
-## Security Considerations
+## Project Structure
 
-This example demonstrates basic implementation. For production use, consider:
-- Implementing additional input validation
-- Adding request rate limiting
-- Including security headers
-- Implementing proper logging
-- Adding payment fraud prevention measures
-- Using HTTPS in production
-- Implementing CSRF protection
-- Configuring secure session handling
-- Using a production-grade WSGI server
+```
+python/
+├── server.py                     # Main Flask application
+├── reports.py                    # Reporting API endpoints
+├── reporting_service.py          # Reporting service logic
+├── index.html                    # Payment form UI
+├── requirements.txt              # Python dependencies
+├── .env                          # Your credentials (not in git)
+├── .env.sample                   # Credential template
+├── README.md                     # This file
+└── REPORTING_README.md           # Reporting API documentation
+```
+
+## Usage
+
+### Processing a Payment
+
+1. Open http://localhost:8000/index.html in your browser
+2. Use test card: `4263970000005262`
+3. Enter any future expiration date
+4. Enter CVV: `123`
+5. Enter billing ZIP code
+6. Click "Pay $10.00"
+
+### Searching Transactions
+
+After processing payments, search for them:
+
+```bash
+curl "http://localhost:8000/reports?action=search&page_size=20"
+```
+
+### Exporting Data
+
+Export transactions to CSV:
+
+```bash
+curl "http://localhost:8000/reports?action=export&format=csv&start_date=2025-09-01" -o transactions.csv
+```
+
+## Testing
+
+### Test Card Numbers
+
+| Card Type | Number | CVV | Expiry |
+|-----------|--------|-----|--------|
+| Visa | 4263970000005262 | 123 | Any future date |
+| Mastercard | 5425230000004415 | 123 | Any future date |
+| Amex | 374101000000608 | 1234 | Any future date |
+
+### Testing Workflow
+
+1. **Process a payment** using the web interface
+2. **Verify transaction** appears in reporting:
+   ```bash
+   curl "http://localhost:8000/reports?action=search"
+   ```
+3. **Get transaction details**:
+   ```bash
+   curl "http://localhost:8000/reports?action=detail&transaction_id=TRN_xxx"
+   ```
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `PUBLIC_API_KEY` | Yes | Portico public API key for payment processing |
+| `SECRET_API_KEY` | Yes | Portico secret API key for payment processing |
+| `GP_API_APP_ID` | Yes | GP-API App ID for reporting |
+| `GP_API_APP_KEY` | Yes | GP-API App Key for reporting |
+| `GP_API_ENVIRONMENT` | No | TEST or PRODUCTION (default: TEST) |
+| `PORT` | No | Server port (default: 8000) |
+
+## Troubleshooting
+
+**Port already in use?**
+```bash
+# Use a different port:
+PORT=8080 python server.py
+```
+
+**Missing credentials error?**
+- Ensure `.env` file exists in the `python/` directory
+- Verify all required credentials are set
+- Check for trailing spaces in credential values
+
+**Payment processing fails?**
+- Verify `PUBLIC_API_KEY` and `SECRET_API_KEY` are correct
+- Ensure using test credentials for test environment
+
+**Reporting not working?**
+- Verify `GP_API_APP_ID` and `GP_API_APP_KEY` are correct
+- These are different from payment processing credentials
+
+**Virtual environment issues?**
+- Ensure virtual environment is activated
+- Try recreating: `python -m venv venv --clear`
+
+## Documentation
+
+- **Payment Processing**: See API Endpoints section above
+- **Transaction Reporting**: See [REPORTING_README.md](REPORTING_README.md)
+- **Global Payments Docs**: https://developer.globalpay.com
+
+## Support
+
+For issues or questions:
+- Global Payments Developer Portal: https://developer.globalpay.com
+- SDK Documentation: https://github.com/globalpayments/python-sdk

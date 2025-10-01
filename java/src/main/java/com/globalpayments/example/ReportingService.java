@@ -7,13 +7,12 @@ import com.global.api.entities.exceptions.ApiException;
 import com.global.api.entities.exceptions.ConfigurationException;
 import com.global.api.entities.reporting.*;
 import com.global.api.serviceConfigs.GpApiConfig;
-import com.global.api.services.ReportingService;
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -54,7 +53,10 @@ public class ReportingService {
         config.setAppKey(dotenv.get("GP_API_APP_KEY"));
 
         // Set environment
-        String environment = dotenv.get("GP_API_ENVIRONMENT", "TEST");
+        String environment = dotenv.get("GP_API_ENVIRONMENT");
+        if (environment == null) {
+            environment = "TEST";
+        }
         if ("PRODUCTION".equalsIgnoreCase(environment)) {
             config.setEnvironment(com.global.api.entities.enums.Environment.PRODUCTION);
         } else {
@@ -78,11 +80,20 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            int page = (int) filters.getOrDefault("page", 1);
-            int pageSize = (int) filters.getOrDefault("page_size", 10);
+            int page = 1;
+            int pageSize = 10;
+
+            if (filters.containsKey("page") && filters.get("page") != null) {
+                Object pageObj = filters.get("page");
+                page = pageObj instanceof Number ? ((Number) pageObj).intValue() : Integer.parseInt(pageObj.toString());
+            }
+            if (filters.containsKey("page_size") && filters.get("page_size") != null) {
+                Object pageSizeObj = filters.get("page_size");
+                pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
+            }
 
             TransactionReportBuilder<List<TransactionSummary>> builder =
-                ReportingService.findTransactionsPaged(page, pageSize);
+                com.global.api.services.ReportingService.findTransactionsPaged(page, pageSize);
 
             // Apply date range filters
             if (filters.containsKey("start_date")) {
@@ -106,15 +117,16 @@ public class ReportingService {
                 // Add payment type filtering logic
             }
 
-            // Apply amount filters
+            // Note: Amount filtering may need to be done client-side
+            // as the SDK's where() method may not support min/max ranges directly
+            // Store for potential client-side filtering after results
+            BigDecimal amountMin = null;
+            BigDecimal amountMax = null;
             if (filters.containsKey("amount_min")) {
-                BigDecimal minAmount = new BigDecimal(filters.get("amount_min").toString());
-                builder.where(SearchCriteria.Amount, minAmount);
+                amountMin = new BigDecimal(filters.get("amount_min").toString());
             }
-
             if (filters.containsKey("amount_max")) {
-                BigDecimal maxAmount = new BigDecimal(filters.get("amount_max").toString());
-                builder.where(SearchCriteria.Amount, maxAmount);
+                amountMax = new BigDecimal(filters.get("amount_max").toString());
             }
 
             // Apply card filter
@@ -125,13 +137,37 @@ public class ReportingService {
             // Execute search
             PagedResult<TransactionSummary> response = builder.execute();
 
+            if (response == null || response.getResults() == null) {
+                throw new ApiException("No response from transaction search");
+            }
+
             List<Map<String, Object>> transactions = formatTransactionList(response.getResults());
 
             // Apply client-side status filtering if needed
-            if (filters.containsKey("status")) {
-                String statusFilter = ((String) filters.get("status")).toUpperCase();
+            if (filters.containsKey("status") && filters.get("status") != null) {
+                String statusFilter = filters.get("status").toString().toUpperCase();
                 transactions = transactions.stream()
-                    .filter(t -> statusFilter.equals(t.get("status")))
+                    .filter(t -> {
+                        Object status = t.get("status");
+                        return status != null && statusFilter.equals(status.toString().toUpperCase());
+                    })
+                    .collect(Collectors.toList());
+            }
+
+            // Apply client-side amount filtering if needed
+            final BigDecimal finalAmountMin = amountMin;
+            final BigDecimal finalAmountMax = amountMax;
+            if (finalAmountMin != null || finalAmountMax != null) {
+                transactions = transactions.stream()
+                    .filter(t -> {
+                        Object amountObj = t.get("amount");
+                        if (amountObj == null) return false;
+                        BigDecimal amount = amountObj instanceof BigDecimal ?
+                            (BigDecimal) amountObj : new BigDecimal(amountObj.toString());
+                        if (finalAmountMin != null && amount.compareTo(finalAmountMin) < 0) return false;
+                        if (finalAmountMax != null && amount.compareTo(finalAmountMax) > 0) return false;
+                        return true;
+                    })
                     .collect(Collectors.toList());
             }
 
@@ -168,7 +204,7 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            Transaction response = ReportingService.transactionDetail(transactionId).execute();
+            Transaction response = com.global.api.services.ReportingService.transactionDetail(transactionId).execute();
 
             if (response == null) {
                 throw new ApiException("Transaction not found");
@@ -197,11 +233,20 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            int page = (int) params.getOrDefault("page", 1);
-            int pageSize = (int) params.getOrDefault("page_size", 50);
+            int page = 1;
+            int pageSize = 50;
+
+            if (params.containsKey("page") && params.get("page") != null) {
+                Object pageObj = params.get("page");
+                page = pageObj instanceof Number ? ((Number) pageObj).intValue() : Integer.parseInt(pageObj.toString());
+            }
+            if (params.containsKey("page_size") && params.get("page_size") != null) {
+                Object pageSizeObj = params.get("page_size");
+                pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
+            }
 
             TransactionReportBuilder<List<TransactionSummary>> builder =
-                ReportingService.findSettlementTransactionsPaged(page, pageSize);
+                com.global.api.services.ReportingService.findSettlementTransactionsPaged(page, pageSize);
 
             // Apply date range
             if (params.containsKey("start_date")) {
@@ -215,6 +260,10 @@ public class ReportingService {
             }
 
             PagedResult<TransactionSummary> response = builder.execute();
+
+            if (response == null || response.getResults() == null) {
+                throw new ApiException("No response from settlement search");
+            }
 
             List<Map<String, Object>> settlements = formatSettlementList(response.getResults());
             Map<String, Object> summary = generateSettlementSummary(response.getResults());
@@ -252,11 +301,20 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            int page = (int) filters.getOrDefault("page", 1);
-            int pageSize = (int) filters.getOrDefault("page_size", 10);
+            int page = 1;
+            int pageSize = 10;
+
+            if (filters.containsKey("page") && filters.get("page") != null) {
+                Object pageObj = filters.get("page");
+                page = pageObj instanceof Number ? ((Number) pageObj).intValue() : Integer.parseInt(pageObj.toString());
+            }
+            if (filters.containsKey("page_size") && filters.get("page_size") != null) {
+                Object pageSizeObj = filters.get("page_size");
+                pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
+            }
 
             TransactionReportBuilder<List<DisputeSummary>> builder =
-                ReportingService.findDisputesPaged(page, pageSize);
+                com.global.api.services.ReportingService.findDisputesPaged(page, pageSize);
 
             // Apply date range filters
             if (filters.containsKey("start_date")) {
@@ -279,6 +337,10 @@ public class ReportingService {
             }
 
             PagedResult<DisputeSummary> response = builder.execute();
+
+            if (response == null || response.getResults() == null) {
+                throw new ApiException("No response from dispute search");
+            }
 
             List<Map<String, Object>> disputes = formatDisputeList(response.getResults());
 
@@ -314,7 +376,7 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            DisputeSummary response = ReportingService.disputeDetail(disputeId).execute();
+            DisputeSummary response = com.global.api.services.ReportingService.disputeDetail(disputeId).execute();
 
             if (response == null) {
                 throw new ApiException("Dispute not found");
@@ -343,11 +405,20 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            int page = (int) filters.getOrDefault("page", 1);
-            int pageSize = (int) filters.getOrDefault("page_size", 10);
+            int page = 1;
+            int pageSize = 10;
+
+            if (filters.containsKey("page") && filters.get("page") != null) {
+                Object pageObj = filters.get("page");
+                page = pageObj instanceof Number ? ((Number) pageObj).intValue() : Integer.parseInt(pageObj.toString());
+            }
+            if (filters.containsKey("page_size") && filters.get("page_size") != null) {
+                Object pageSizeObj = filters.get("page_size");
+                pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
+            }
 
             TransactionReportBuilder<List<DepositSummary>> builder =
-                ReportingService.findDepositsPaged(page, pageSize);
+                com.global.api.services.ReportingService.findDepositsPaged(page, pageSize);
 
             // Apply date range filters
             if (filters.containsKey("start_date")) {
@@ -371,6 +442,10 @@ public class ReportingService {
             }
 
             PagedResult<DepositSummary> response = builder.execute();
+
+            if (response == null || response.getResults() == null) {
+                throw new ApiException("No response from deposit search");
+            }
 
             List<Map<String, Object>> deposits = formatDepositList(response.getResults());
 
@@ -406,7 +481,7 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            DepositSummary response = ReportingService.depositDetail(depositId).execute();
+            DepositSummary response = com.global.api.services.ReportingService.depositDetail(depositId).execute();
 
             if (response == null) {
                 throw new ApiException("Deposit not found");
@@ -464,17 +539,23 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            // Add declined status to filters
-            filters.put("status", "DECLINED");
-            Map<String, Object> result = searchTransactions(filters);
+            // Create a copy of filters to avoid mutating the input
+            Map<String, Object> declineFilters = new HashMap<>(filters);
+            declineFilters.put("status", "DECLINED");
+            Map<String, Object> result = searchTransactions(declineFilters);
 
             // Add decline analysis
-            if ((boolean) result.get("success")) {
+            Boolean success = (Boolean) result.get("success");
+            if (success != null && success) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) result.get("data");
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> transactions = (List<Map<String, Object>>) data.get("transactions");
-                data.put("decline_analysis", analyzeDeclines(transactions));
+                if (data != null) {
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> transactions = (List<Map<String, Object>>) data.get("transactions");
+                    if (transactions != null) {
+                        data.put("decline_analysis", analyzeDeclines(transactions));
+                    }
+                }
             }
 
             return result;
@@ -494,10 +575,12 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            String startDate = (String) params.getOrDefault("start_date",
-                LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_DATE));
-            String endDate = (String) params.getOrDefault("end_date",
-                LocalDate.now().format(DateTimeFormatter.ISO_DATE));
+            String startDate = params.containsKey("start_date") && params.get("start_date") != null ?
+                params.get("start_date").toString() :
+                LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_DATE);
+            String endDate = params.containsKey("end_date") && params.get("end_date") != null ?
+                params.get("end_date").toString() :
+                LocalDate.now().format(DateTimeFormatter.ISO_DATE);
 
             Map<String, Object> period = new HashMap<>();
             period.put("start_date", startDate);
@@ -511,13 +594,18 @@ public class ReportingService {
                 Map<String, Object> transactionFilters = new HashMap<>();
                 transactionFilters.put("start_date", startDate);
                 transactionFilters.put("end_date", endDate);
-                transactionFilters.put("page_size", params.getOrDefault("transaction_limit", 100));
+                int transactionLimit = params.containsKey("transaction_limit") ?
+                    ((Number) params.get("transaction_limit")).intValue() : 100;
+                transactionFilters.put("page_size", transactionLimit);
                 Map<String, Object> transactionResult = searchTransactions(transactionFilters);
-                if ((boolean) transactionResult.get("success")) {
+                Boolean transactionSuccess = (Boolean) transactionResult.get("success");
+                if (transactionSuccess != null && transactionSuccess) {
                     data.put("transactions", transactionResult.get("data"));
                 }
             } catch (Exception e) {
-                data.put("transactions", Map.of("error", "Transactions not available: " + e.getMessage()));
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("error", "Transactions not available: " + e.getMessage());
+                data.put("transactions", errorMap);
             }
 
             // Get settlements for the period
@@ -525,13 +613,18 @@ public class ReportingService {
                 Map<String, Object> settlementParams = new HashMap<>();
                 settlementParams.put("start_date", startDate);
                 settlementParams.put("end_date", endDate);
-                settlementParams.put("page_size", params.getOrDefault("settlement_limit", 50));
+                int settlementLimit = params.containsKey("settlement_limit") ?
+                    ((Number) params.get("settlement_limit")).intValue() : 50;
+                settlementParams.put("page_size", settlementLimit);
                 Map<String, Object> settlementResult = getSettlementReport(settlementParams);
-                if ((boolean) settlementResult.get("success")) {
+                Boolean settlementSuccess = (Boolean) settlementResult.get("success");
+                if (settlementSuccess != null && settlementSuccess) {
                     data.put("settlements", settlementResult.get("data"));
                 }
             } catch (Exception e) {
-                data.put("settlements", Map.of("error", "Settlements not available: " + e.getMessage()));
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("error", "Settlements not available: " + e.getMessage());
+                data.put("settlements", errorMap);
             }
 
             // Get disputes for the period
@@ -539,13 +632,18 @@ public class ReportingService {
                 Map<String, Object> disputeFilters = new HashMap<>();
                 disputeFilters.put("start_date", startDate);
                 disputeFilters.put("end_date", endDate);
-                disputeFilters.put("page_size", params.getOrDefault("dispute_limit", 25));
+                int disputeLimit = params.containsKey("dispute_limit") ?
+                    ((Number) params.get("dispute_limit")).intValue() : 25;
+                disputeFilters.put("page_size", disputeLimit);
                 Map<String, Object> disputeResult = getDisputeReport(disputeFilters);
-                if ((boolean) disputeResult.get("success")) {
+                Boolean disputeSuccess = (Boolean) disputeResult.get("success");
+                if (disputeSuccess != null && disputeSuccess) {
                     data.put("disputes", disputeResult.get("data"));
                 }
             } catch (Exception e) {
-                data.put("disputes", Map.of("error", "Disputes not available: " + e.getMessage()));
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("error", "Disputes not available: " + e.getMessage());
+                data.put("disputes", errorMap);
             }
 
             // Get deposits for the period
@@ -553,13 +651,18 @@ public class ReportingService {
                 Map<String, Object> depositFilters = new HashMap<>();
                 depositFilters.put("start_date", startDate);
                 depositFilters.put("end_date", endDate);
-                depositFilters.put("page_size", params.getOrDefault("deposit_limit", 25));
+                int depositLimit = params.containsKey("deposit_limit") ?
+                    ((Number) params.get("deposit_limit")).intValue() : 25;
+                depositFilters.put("page_size", depositLimit);
                 Map<String, Object> depositResult = getDepositReport(depositFilters);
-                if ((boolean) depositResult.get("success")) {
+                Boolean depositSuccess = (Boolean) depositResult.get("success");
+                if (depositSuccess != null && depositSuccess) {
                     data.put("deposits", depositResult.get("data"));
                 }
             } catch (Exception e) {
-                data.put("deposits", Map.of("error", "Deposits not available: " + e.getMessage()));
+                Map<String, Object> errorMap = new HashMap<>();
+                errorMap.put("error", "Deposits not available: " + e.getMessage());
+                data.put("deposits", errorMap);
             }
 
             // Generate comprehensive summary
@@ -593,14 +696,22 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            // Get all transactions (increase limit for export)
-            filters.put("page_size", 1000);
-            Map<String, Object> transactions = searchTransactions(filters);
+            // Create a copy of filters to avoid mutating the input
+            Map<String, Object> exportFilters = new HashMap<>(filters);
+            exportFilters.put("page_size", 1000);
+            Map<String, Object> transactions = searchTransactions(exportFilters);
 
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) transactions.get("data");
+            if (data == null) {
+                throw new ApiException("No data returned from transaction search");
+            }
+
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> transactionList = (List<Map<String, Object>>) data.get("transactions");
+            if (transactionList == null) {
+                throw new ApiException("No transactions found");
+            }
 
             if ("csv".equals(format)) {
                 return exportToCsv(transactionList);
@@ -631,10 +742,12 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            String startDate = (String) params.getOrDefault("start_date",
-                LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_DATE));
-            String endDate = (String) params.getOrDefault("end_date",
-                LocalDate.now().format(DateTimeFormatter.ISO_DATE));
+            String startDate = params.containsKey("start_date") && params.get("start_date") != null ?
+                params.get("start_date").toString() :
+                LocalDate.now().minusDays(30).format(DateTimeFormatter.ISO_DATE);
+            String endDate = params.containsKey("end_date") && params.get("end_date") != null ?
+                params.get("end_date").toString() :
+                LocalDate.now().format(DateTimeFormatter.ISO_DATE);
 
             // Get transaction summary
             Map<String, Object> filters = new HashMap<>();
@@ -646,8 +759,15 @@ public class ReportingService {
 
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) transactions.get("data");
+            if (data == null) {
+                throw new RuntimeException("No data returned from transaction search");
+            }
+
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> transactionList = (List<Map<String, Object>>) data.get("transactions");
+            if (transactionList == null) {
+                transactionList = new ArrayList<>();
+            }
 
             Map<String, Object> period = new HashMap<>();
             period.put("start_date", startDate);
@@ -676,7 +796,8 @@ public class ReportingService {
     public Map<String, Object> getSdkConfigStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("configured", isConfigured);
-        status.put("environment", dotenv.get("GP_API_ENVIRONMENT", "TEST"));
+        String env = dotenv.get("GP_API_ENVIRONMENT");
+        status.put("environment", env != null ? env : "TEST");
         status.put("app_id_configured", dotenv.get("GP_API_APP_ID") != null);
         return status;
     }
@@ -703,9 +824,10 @@ public class ReportingService {
     private Date parseDate(String dateStr) {
         try {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+            sdf.setLenient(false);
             return sdf.parse(dateStr);
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid date format: " + dateStr);
+        } catch (java.text.ParseException e) {
+            throw new IllegalArgumentException("Invalid date format: " + dateStr + ". Expected format: yyyy-MM-dd");
         }
     }
 
@@ -780,7 +902,7 @@ public class ReportingService {
         summary.put("total_amount", totalAmount);
         summary.put("total_transactions", totalTransactions);
         summary.put("average_settlement_amount",
-            settlements.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(settlements.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO);
+            settlements.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(settlements.size()), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
 
         return summary;
     }
@@ -876,15 +998,21 @@ public class ReportingService {
         for (Map<String, Object> transaction : transactions) {
             Object amountObj = transaction.get("amount");
             if (amountObj != null) {
-                BigDecimal amount = amountObj instanceof BigDecimal ?
-                    (BigDecimal) amountObj : new BigDecimal(amountObj.toString());
-                totalAmount = totalAmount.add(amount);
+                try {
+                    BigDecimal amount = amountObj instanceof BigDecimal ?
+                        (BigDecimal) amountObj : new BigDecimal(amountObj.toString());
+                    totalAmount = totalAmount.add(amount);
+                } catch (NumberFormatException e) {
+                    // Skip invalid amounts
+                }
             }
 
-            String status = (String) transaction.getOrDefault("status", "unknown");
+            Object statusObj = transaction.getOrDefault("status", "unknown");
+            String status = statusObj != null ? statusObj.toString() : "unknown";
             statusCounts.put(status, statusCounts.getOrDefault(status, 0) + 1);
 
-            String paymentType = (String) transaction.getOrDefault("payment_method", "unknown");
+            Object paymentMethodObj = transaction.getOrDefault("payment_method", "unknown");
+            String paymentType = paymentMethodObj != null ? paymentMethodObj.toString() : "unknown";
             paymentTypeCounts.put(paymentType, paymentTypeCounts.getOrDefault(paymentType, 0) + 1);
         }
 
@@ -892,7 +1020,7 @@ public class ReportingService {
         summary.put("total_transactions", transactions.size());
         summary.put("total_amount", totalAmount);
         summary.put("average_amount",
-            transactions.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(transactions.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO);
+            transactions.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(transactions.size()), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
         summary.put("status_breakdown", statusCounts);
         summary.put("payment_type_breakdown", paymentTypeCounts);
 
@@ -907,15 +1035,15 @@ public class ReportingService {
 
         for (Map<String, Object> transaction : transactions) {
             csvData.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
-                transaction.getOrDefault("transaction_id", ""),
-                formatTimestamp(transaction.get("timestamp"), sdf),
-                transaction.getOrDefault("amount", ""),
-                transaction.getOrDefault("currency", ""),
-                transaction.getOrDefault("status", ""),
-                transaction.getOrDefault("payment_method", ""),
-                transaction.getOrDefault("card_last_four", ""),
-                transaction.getOrDefault("auth_code", ""),
-                transaction.getOrDefault("reference_number", "")
+                escapeCsv(transaction.getOrDefault("transaction_id", "")),
+                escapeCsv(formatTimestamp(transaction.get("timestamp"), sdf)),
+                escapeCsv(transaction.getOrDefault("amount", "")),
+                escapeCsv(transaction.getOrDefault("currency", "")),
+                escapeCsv(transaction.getOrDefault("status", "")),
+                escapeCsv(transaction.getOrDefault("payment_method", "")),
+                escapeCsv(transaction.getOrDefault("card_last_four", "")),
+                escapeCsv(transaction.getOrDefault("auth_code", "")),
+                escapeCsv(transaction.getOrDefault("reference_number", ""))
             ));
         }
 
@@ -929,6 +1057,18 @@ public class ReportingService {
         return result;
     }
 
+    private String escapeCsv(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String str = value.toString();
+        // If the value contains comma, quote, or newline, wrap it in quotes and escape quotes
+        if (str.contains(",") || str.contains("\"") || str.contains("\n") || str.contains("\r")) {
+            return "\"" + str.replace("\"", "\"\"") + "\"";
+        }
+        return str;
+    }
+
     private Map<String, Object> exportToXml(List<Map<String, Object>> transactions) {
         StringBuilder xmlData = new StringBuilder();
         xmlData.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -938,15 +1078,15 @@ public class ReportingService {
 
         for (Map<String, Object> transaction : transactions) {
             xmlData.append("  <transaction>\n");
-            xmlData.append("    <transaction_id>").append(transaction.getOrDefault("transaction_id", "")).append("</transaction_id>\n");
-            xmlData.append("    <timestamp>").append(formatTimestamp(transaction.get("timestamp"), sdf)).append("</timestamp>\n");
-            xmlData.append("    <amount>").append(transaction.getOrDefault("amount", "")).append("</amount>\n");
-            xmlData.append("    <currency>").append(transaction.getOrDefault("currency", "")).append("</currency>\n");
-            xmlData.append("    <status>").append(transaction.getOrDefault("status", "")).append("</status>\n");
-            xmlData.append("    <payment_method>").append(transaction.getOrDefault("payment_method", "")).append("</payment_method>\n");
-            xmlData.append("    <card_last_four>").append(transaction.getOrDefault("card_last_four", "")).append("</card_last_four>\n");
-            xmlData.append("    <auth_code>").append(transaction.getOrDefault("auth_code", "")).append("</auth_code>\n");
-            xmlData.append("    <reference_number>").append(transaction.getOrDefault("reference_number", "")).append("</reference_number>\n");
+            xmlData.append("    <transaction_id>").append(escapeXml(transaction.getOrDefault("transaction_id", ""))).append("</transaction_id>\n");
+            xmlData.append("    <timestamp>").append(escapeXml(formatTimestamp(transaction.get("timestamp"), sdf))).append("</timestamp>\n");
+            xmlData.append("    <amount>").append(escapeXml(transaction.getOrDefault("amount", ""))).append("</amount>\n");
+            xmlData.append("    <currency>").append(escapeXml(transaction.getOrDefault("currency", ""))).append("</currency>\n");
+            xmlData.append("    <status>").append(escapeXml(transaction.getOrDefault("status", ""))).append("</status>\n");
+            xmlData.append("    <payment_method>").append(escapeXml(transaction.getOrDefault("payment_method", ""))).append("</payment_method>\n");
+            xmlData.append("    <card_last_four>").append(escapeXml(transaction.getOrDefault("card_last_four", ""))).append("</card_last_four>\n");
+            xmlData.append("    <auth_code>").append(escapeXml(transaction.getOrDefault("auth_code", ""))).append("</auth_code>\n");
+            xmlData.append("    <reference_number>").append(escapeXml(transaction.getOrDefault("reference_number", ""))).append("</reference_number>\n");
             xmlData.append("  </transaction>\n");
         }
 
@@ -960,6 +1100,18 @@ public class ReportingService {
         result.put("timestamp", getCurrentTimestamp());
 
         return result;
+    }
+
+    private String escapeXml(Object value) {
+        if (value == null) {
+            return "";
+        }
+        String str = value.toString();
+        return str.replace("&", "&amp;")
+                  .replace("<", "&lt;")
+                  .replace(">", "&gt;")
+                  .replace("\"", "&quot;")
+                  .replace("'", "&apos;");
     }
 
     private String formatTimestamp(Object timestamp, SimpleDateFormat sdf) {
@@ -1009,7 +1161,7 @@ public class ReportingService {
         analysis.put("total_declined_transactions", transactions.size());
         analysis.put("total_declined_amount", totalAmount);
         analysis.put("average_declined_amount",
-            transactions.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(transactions.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO);
+            transactions.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(transactions.size()), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
         analysis.put("decline_reasons", declineReasons);
         analysis.put("card_type_breakdown", cardTypes);
         analysis.put("hourly_breakdown", hourlyBreakdown);
@@ -1045,7 +1197,7 @@ public class ReportingService {
                 transactionOverview.put("count", transactions.size());
                 transactionOverview.put("total_amount", totalAmount);
                 transactionOverview.put("average_amount",
-                    transactions.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(transactions.size()), 2, BigDecimal.ROUND_HALF_UP) : BigDecimal.ZERO);
+                    transactions.size() > 0 ? totalAmount.divide(BigDecimal.valueOf(transactions.size()), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
                 overview.put("transactions", transactionOverview);
             }
         }
