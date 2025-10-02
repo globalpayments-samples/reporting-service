@@ -911,7 +911,7 @@ public class ReportingService {
         return disputes.stream().map(dispute -> {
             Map<String, Object> formatted = new HashMap<>();
             formatted.put("dispute_id", dispute.getCaseId());
-            formatted.put("transaction_id", dispute.transactionOrderId());
+            formatted.put("transaction_id", dispute.getTransactionOrderId());
             formatted.put("case_number", dispute.getCaseNumber());
             formatted.put("dispute_stage", dispute.getCaseStage());
             formatted.put("dispute_status", dispute.getCaseStatus());
@@ -920,7 +920,7 @@ public class ReportingService {
             formatted.put("reason_code", dispute.getReasonCode());
             formatted.put("reason_description", dispute.getReason());
             formatted.put("case_time", dispute.getCaseTime());
-            formatted.put("last_adjustment_time", dispute.getAdjustmentTime());
+            formatted.put("last_adjustment_time", dispute.getLastAdjustmentTime());
             return formatted;
         }).collect(Collectors.toList());
     }
@@ -928,7 +928,7 @@ public class ReportingService {
     private Map<String, Object> formatDisputeDetails(DisputeSummary dispute) {
         Map<String, Object> details = new HashMap<>();
         details.put("dispute_id", dispute.getCaseId());
-        details.put("transaction_id", dispute.transactionOrderId());
+        details.put("transaction_id", dispute.getTransactionOrderId());
         details.put("case_number", dispute.getCaseNumber());
         details.put("dispute_stage", dispute.getCaseStage());
         details.put("dispute_status", dispute.getCaseStatus());
@@ -937,7 +937,7 @@ public class ReportingService {
         details.put("reason_code", dispute.getReasonCode());
         details.put("reason_description", dispute.getReason());
         details.put("case_time", dispute.getCaseTime());
-        details.put("last_adjustment_time", dispute.getAdjustmentTime());
+        details.put("last_adjustment_time", dispute.getLastAdjustmentTime());
         details.put("case_description", dispute.getCaseDescription());
 
         Map<String, Object> transactionDetails = new HashMap<>();
