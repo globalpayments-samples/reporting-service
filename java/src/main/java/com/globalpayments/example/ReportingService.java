@@ -1,8 +1,9 @@
 package com.globalpayments.example;
 
 import com.global.api.ServicesContainer;
-import com.global.api.entities.Transaction;
+import com.global.api.builders.TransactionReportBuilder;
 import com.global.api.entities.TransactionSummary;
+import com.global.api.entities.enums.DisputeSortProperty;
 import com.global.api.entities.exceptions.ApiException;
 import com.global.api.entities.exceptions.ConfigurationException;
 import com.global.api.entities.reporting.*;
@@ -92,29 +93,28 @@ public class ReportingService {
                 pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
             }
 
-            TransactionReportBuilder<List<TransactionSummary>> builder =
+            TransactionReportBuilder<TransactionSummaryPaged> builder =
                 com.global.api.services.ReportingService.findTransactionsPaged(page, pageSize);
 
             // Apply date range filters
             if (filters.containsKey("start_date")) {
                 Date startDate = parseDate((String) filters.get("start_date"));
-                builder.withStartDate(startDate);
+                builder.where(SearchCriteria.StartDate, startDate);
             }
 
             if (filters.containsKey("end_date")) {
                 Date endDate = parseDate((String) filters.get("end_date"));
-                builder.withEndDate(endDate);
+                builder.and(SearchCriteria.EndDate, endDate);
             }
 
             // Apply transaction ID filter
             if (filters.containsKey("transaction_id")) {
-                builder.withTransactionId((String) filters.get("transaction_id"));
+                builder.and(SearchCriteria.TransactionId, filters.get("transaction_id"));
             }
 
             // Apply payment type filter
             if (filters.containsKey("payment_type")) {
-                String paymentType = (String) filters.get("payment_type");
-                // Add payment type filtering logic
+                builder.and(SearchCriteria.PaymentType, filters.get("payment_type"));
             }
 
             // Note: Amount filtering may need to be done client-side
@@ -131,11 +131,11 @@ public class ReportingService {
 
             // Apply card filter
             if (filters.containsKey("card_last_four")) {
-                builder.where(SearchCriteria.CardNumberLastFour, filters.get("card_last_four"));
+                builder.and(SearchCriteria.CardNumberLastFour, filters.get("card_last_four"));
             }
 
             // Execute search
-            PagedResult<TransactionSummary> response = builder.execute();
+            TransactionSummaryPaged response = builder.execute();
 
             if (response == null || response.getResults() == null) {
                 throw new ApiException("No response from transaction search");
@@ -175,7 +175,6 @@ public class ReportingService {
             pagination.put("page", page);
             pagination.put("page_size", pageSize);
             pagination.put("total_count", transactions.size());
-            pagination.put("original_total_count", response.getTotalRecordCount());
 
             Map<String, Object> data = new HashMap<>();
             data.put("transactions", transactions);
@@ -204,7 +203,9 @@ public class ReportingService {
         ensureConfigured();
 
         try {
-            Transaction response = com.global.api.services.ReportingService.transactionDetail(transactionId).execute();
+            TransactionSummary response = com.global.api.services.ReportingService
+                .transactionDetail(transactionId)
+                .execute();
 
             if (response == null) {
                 throw new ApiException("Transaction not found");
@@ -212,7 +213,7 @@ public class ReportingService {
 
             Map<String, Object> result = new HashMap<>();
             result.put("success", true);
-            result.put("data", formatTransactionDetails(response));
+            result.put("data", formatTransactionSummary(response));
             result.put("timestamp", getCurrentTimestamp());
 
             return result;
@@ -245,21 +246,21 @@ public class ReportingService {
                 pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
             }
 
-            TransactionReportBuilder<List<TransactionSummary>> builder =
+            TransactionReportBuilder<TransactionSummaryPaged> builder =
                 com.global.api.services.ReportingService.findSettlementTransactionsPaged(page, pageSize);
 
             // Apply date range
             if (params.containsKey("start_date")) {
                 Date startDate = parseDate((String) params.get("start_date"));
-                builder.withStartDate(startDate);
+                builder.where(SearchCriteria.StartDate, startDate);
             }
 
             if (params.containsKey("end_date")) {
                 Date endDate = parseDate((String) params.get("end_date"));
-                builder.withEndDate(endDate);
+                builder.and(SearchCriteria.EndDate, endDate);
             }
 
-            PagedResult<TransactionSummary> response = builder.execute();
+            TransactionSummaryPaged response = builder.execute();
 
             if (response == null || response.getResults() == null) {
                 throw new ApiException("No response from settlement search");
@@ -271,7 +272,7 @@ public class ReportingService {
             Map<String, Object> pagination = new HashMap<>();
             pagination.put("page", page);
             pagination.put("page_size", pageSize);
-            pagination.put("total_count", response.getTotalRecordCount());
+            pagination.put("total_count", response.getResults().size());
 
             Map<String, Object> data = new HashMap<>();
             data.put("settlements", settlements);
@@ -313,30 +314,30 @@ public class ReportingService {
                 pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
             }
 
-            TransactionReportBuilder<List<DisputeSummary>> builder =
+            TransactionReportBuilder<DisputeSummaryPaged> builder =
                 com.global.api.services.ReportingService.findDisputesPaged(page, pageSize);
 
             // Apply date range filters
             if (filters.containsKey("start_date")) {
                 Date startDate = parseDate((String) filters.get("start_date"));
-                builder.withStartDate(startDate);
+                builder.where(SearchCriteria.StartDate, startDate);
             }
 
             if (filters.containsKey("end_date")) {
                 Date endDate = parseDate((String) filters.get("end_date"));
-                builder.withEndDate(endDate);
+                builder.and(SearchCriteria.EndDate, endDate);
             }
 
             // Apply stage and status filters
             if (filters.containsKey("stage")) {
-                builder.where(SearchCriteria.DisputeStage, filters.get("stage"));
+                builder.and(SearchCriteria.DisputeStage, filters.get("stage"));
             }
 
             if (filters.containsKey("status")) {
-                builder.where(SearchCriteria.DisputeStatus, filters.get("status"));
+                builder.and(SearchCriteria.DisputeStatus, filters.get("status"));
             }
 
-            PagedResult<DisputeSummary> response = builder.execute();
+            DisputeSummaryPaged response = builder.execute();
 
             if (response == null || response.getResults() == null) {
                 throw new ApiException("No response from dispute search");
@@ -347,7 +348,7 @@ public class ReportingService {
             Map<String, Object> pagination = new HashMap<>();
             pagination.put("page", page);
             pagination.put("page_size", pageSize);
-            pagination.put("total_count", response.getTotalRecordCount());
+            pagination.put("total_count", response.getResults().size());
 
             Map<String, Object> data = new HashMap<>();
             data.put("disputes", disputes);
@@ -417,31 +418,31 @@ public class ReportingService {
                 pageSize = pageSizeObj instanceof Number ? ((Number) pageSizeObj).intValue() : Integer.parseInt(pageSizeObj.toString());
             }
 
-            TransactionReportBuilder<List<DepositSummary>> builder =
+            TransactionReportBuilder<DepositSummaryPaged> builder =
                 com.global.api.services.ReportingService.findDepositsPaged(page, pageSize);
 
             // Apply date range filters
             if (filters.containsKey("start_date")) {
                 Date startDate = parseDate((String) filters.get("start_date"));
-                builder.withStartDate(startDate);
+                builder.where(SearchCriteria.StartDate, startDate);
             }
 
             if (filters.containsKey("end_date")) {
                 Date endDate = parseDate((String) filters.get("end_date"));
-                builder.withEndDate(endDate);
+                builder.and(SearchCriteria.EndDate, endDate);
             }
 
             // Apply deposit ID filter
             if (filters.containsKey("deposit_id")) {
-                builder.where(SearchCriteria.DepositReference, filters.get("deposit_id"));
+                builder.and(SearchCriteria.DepositId, filters.get("deposit_id"));
             }
 
             // Apply status filter
             if (filters.containsKey("status")) {
-                builder.where(SearchCriteria.DepositStatus, filters.get("status"));
+                builder.and(SearchCriteria.DepositStatus, filters.get("status"));
             }
 
-            PagedResult<DepositSummary> response = builder.execute();
+            DepositSummaryPaged response = builder.execute();
 
             if (response == null || response.getResults() == null) {
                 throw new ApiException("No response from deposit search");
@@ -452,7 +453,7 @@ public class ReportingService {
             Map<String, Object> pagination = new HashMap<>();
             pagination.put("page", page);
             pagination.put("page_size", pageSize);
-            pagination.put("total_count", response.getTotalRecordCount());
+            pagination.put("total_count", response.getResults().size());
 
             Map<String, Object> data = new HashMap<>();
             data.put("deposits", deposits);
@@ -851,25 +852,24 @@ public class ReportingService {
         }).collect(Collectors.toList());
     }
 
-    private Map<String, Object> formatTransactionDetails(Transaction transaction) {
+    private Map<String, Object> formatTransactionSummary(TransactionSummary transaction) {
         Map<String, Object> details = new HashMap<>();
         details.put("transaction_id", transaction.getTransactionId());
-        details.put("timestamp", transaction.getTimestamp());
-        details.put("amount", transaction.getAuthorizedAmount());
-        details.put("currency", "USD");
-        details.put("status", transaction.getResponseCode());
-        details.put("payment_method", transaction.getPaymentMethodType());
+        details.put("timestamp", transaction.getTransactionDate());
+        details.put("amount", transaction.getAmount());
+        details.put("currency", transaction.getCurrency());
+        details.put("status", transaction.getTransactionStatus());
+        details.put("payment_method", transaction.getPaymentType());
 
         Map<String, Object> cardDetails = new HashMap<>();
-        cardDetails.put("masked_number", transaction.getCardLast4());
+        cardDetails.put("masked_number", transaction.getMaskedCardNumber());
         cardDetails.put("card_type", transaction.getCardType());
-        cardDetails.put("entry_mode", transaction.getEntryMode());
         details.put("card_details", cardDetails);
 
-        details.put("auth_code", transaction.getAuthorizationCode());
+        details.put("auth_code", transaction.getAuthCode());
         details.put("reference_number", transaction.getReferenceNumber());
-        details.put("gateway_response_code", transaction.getResponseCode());
-        details.put("gateway_response_message", transaction.getResponseMessage());
+        details.put("gateway_response_code", transaction.getGatewayResponseCode());
+        details.put("gateway_response_message", transaction.getGatewayResponseMessage());
 
         return details;
     }
@@ -911,8 +911,8 @@ public class ReportingService {
         return disputes.stream().map(dispute -> {
             Map<String, Object> formatted = new HashMap<>();
             formatted.put("dispute_id", dispute.getCaseId());
-            formatted.put("transaction_id", dispute.getTransactionId());
-            formatted.put("case_number", dispute.getCaseIdNumber());
+            formatted.put("transaction_id", dispute.transactionOrderId());
+            formatted.put("case_number", dispute.getCaseNumber());
             formatted.put("dispute_stage", dispute.getCaseStage());
             formatted.put("dispute_status", dispute.getCaseStatus());
             formatted.put("case_amount", dispute.getCaseAmount());
@@ -920,7 +920,7 @@ public class ReportingService {
             formatted.put("reason_code", dispute.getReasonCode());
             formatted.put("reason_description", dispute.getReason());
             formatted.put("case_time", dispute.getCaseTime());
-            formatted.put("last_adjustment_time", dispute.getLastAdjustmentTime());
+            formatted.put("last_adjustment_time", dispute.getAdjustmentTime());
             return formatted;
         }).collect(Collectors.toList());
     }
@@ -928,8 +928,8 @@ public class ReportingService {
     private Map<String, Object> formatDisputeDetails(DisputeSummary dispute) {
         Map<String, Object> details = new HashMap<>();
         details.put("dispute_id", dispute.getCaseId());
-        details.put("transaction_id", dispute.getTransactionId());
-        details.put("case_number", dispute.getCaseIdNumber());
+        details.put("transaction_id", dispute.transactionOrderId());
+        details.put("case_number", dispute.getCaseNumber());
         details.put("dispute_stage", dispute.getCaseStage());
         details.put("dispute_status", dispute.getCaseStatus());
         details.put("case_amount", dispute.getCaseAmount());
@@ -937,7 +937,7 @@ public class ReportingService {
         details.put("reason_code", dispute.getReasonCode());
         details.put("reason_description", dispute.getReason());
         details.put("case_time", dispute.getCaseTime());
-        details.put("last_adjustment_time", dispute.getLastAdjustmentTime());
+        details.put("last_adjustment_time", dispute.getAdjustmentTime());
         details.put("case_description", dispute.getCaseDescription());
 
         Map<String, Object> transactionDetails = new HashMap<>();
