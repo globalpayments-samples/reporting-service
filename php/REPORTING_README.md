@@ -1,210 +1,130 @@
-# Global Payments Reporting API - PHP
+# Transaction Reporting API
 
-A comprehensive reporting service for Global Payments transactions with search, filtering, analytics, and data export capabilities.
+Query and export transaction data from Global Payments.
 
-## Quick Start
+## Setup
 
-### 1. Configure Environment
-
-Add to your `.env` file:
-
+Add to `.env`:
 ```properties
 GP_API_APP_ID=your_app_id_here
 GP_API_APP_KEY=your_app_key_here
 ```
 
-### 2. Start the Server
+Start server: `php -S localhost:8000`
 
-```bash
-cd php
-php -S localhost:8000
-```
+## Endpoints
 
-The API will be available at `http://localhost:8000/reports.php`
-
-### 3. Verify Configuration
-
-```bash
-curl "http://localhost:8000/reports.php?action=config"
-```
-
-## API Endpoints
-
-All endpoints use `/reports.php?action={action_name}` and support both GET and POST requests.
+Base URL: `http://localhost:8000/reports.php?action=`
 
 ### Search Transactions
 
-Search and filter transactions with pagination.
-
 ```bash
-curl "http://localhost:8000/reports.php?action=search&start_date=2025-09-01&end_date=2025-09-30&page_size=20"
+curl "http://localhost:8000/reports.php?action=search&start_date=2025-09-01&page_size=20"
 ```
 
-**Parameters**:
+**Parameters:**
 - `page` - Page number (default: 1)
-- `page_size` - Results per page (default: 10, max: 100)
-- `start_date` - Start date (YYYY-MM-DD)
-- `end_date` - End date (YYYY-MM-DD)
-- `transaction_id` - Specific transaction ID
-- `payment_type` - Payment type filter
-- `status` - Transaction status (e.g., CAPTURED, DECLINED)
-- `amount_min` - Minimum amount
-- `amount_max` - Maximum amount
-- `card_last_four` - Last 4 digits of card
+- `page_size` - Items per page (max: 100)
+- `start_date` - YYYY-MM-DD
+- `end_date` - YYYY-MM-DD
+- `status` - CAPTURED, DECLINED, PENDING, REVERSED
+- `transaction_id` - Specific transaction
+- `amount_min` / `amount_max` - Amount range
+- `card_last_four` - Last 4 card digits
 
-### Get Transaction Details
-
-Retrieve detailed information for a specific transaction.
+### Transaction Details
 
 ```bash
-curl "http://localhost:8000/reports.php?action=detail&transaction_id=TRN_123456"
+curl "http://localhost:8000/reports.php?action=detail&transaction_id=TRN_xxx"
 ```
 
-**Required**: `transaction_id`
-
-### Settlement Report
-
-Get settlement information for a date range.
+### Export Data
 
 ```bash
-curl "http://localhost:8000/reports.php?action=settlement&start_date=2025-09-01&end_date=2025-09-30"
+# CSV
+curl "http://localhost:8000/reports.php?action=export&format=csv&start_date=2025-09-01" -o file.csv
+
+# JSON
+curl "http://localhost:8000/reports.php?action=export&format=json&start_date=2025-09-01" -o file.json
 ```
 
-**Parameters**:
-- `page`, `page_size` - Pagination
-- `start_date`, `end_date` - Date range
+Exports up to 1000 records. Use filters to narrow results.
 
-### Export Transactions
-
-Export transaction data in JSON or CSV format.
-
-**CSV Export**:
-```bash
-curl "http://localhost:8000/reports.php?action=export&format=csv&start_date=2025-09-01&end_date=2025-09-30" -o transactions.csv
-```
-
-**JSON Export**:
-```bash
-curl "http://localhost:8000/reports.php?action=export&format=json&start_date=2025-09-01&end_date=2025-09-30"
-```
-
-**Parameters**:
-- `format` - Export format: `json` or `csv` (required)
-- Plus all search filters
-
-### Summary Statistics
-
-Get aggregate statistics for transactions.
+### Summary Stats
 
 ```bash
 curl "http://localhost:8000/reports.php?action=summary&start_date=2025-09-01&end_date=2025-09-30"
 ```
 
-**Returns**:
-- Total transaction count
-- Total amount
-- Average amount
-- Status breakdown
-- Payment type breakdown
+Returns totals, averages, and breakdowns by status/payment type.
 
-### Declined Transactions Report
-
-Get declined transactions with analysis.
+### Declined Transactions
 
 ```bash
-curl "http://localhost:8000/reports.php?action=declines&start_date=2025-09-01&end_date=2025-09-30"
+curl "http://localhost:8000/reports.php?action=declines&start_date=2025-09-01&page_size=20"
 ```
 
-**Returns** transaction data plus decline analysis:
-- Decline reasons breakdown
-- Card type breakdown
-- Hourly decline patterns
+Returns declined transactions with analysis (reasons, card types, trends).
 
-## Using POST with JSON
-
-All endpoints support POST requests:
+### Settlement Report
 
 ```bash
-curl -X POST http://localhost:8000/reports.php \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "action=search&start_date=2025-09-01&end_date=2025-09-30&page_size=50&status=CAPTURED"
+curl "http://localhost:8000/reports.php?action=settlement&start_date=2025-09-01"
+```
+
+### Disputes
+
+```bash
+curl "http://localhost:8000/reports.php?action=disputes&status=PENDING"
+```
+
+### Deposits
+
+```bash
+curl "http://localhost:8000/reports.php?action=deposits&start_date=2025-09-01"
+```
+
+### Batches
+
+```bash
+curl "http://localhost:8000/reports.php?action=batches&start_date=2025-09-01"
 ```
 
 ## Response Format
 
-### Success Response
+All responses follow this structure:
 
 ```json
 {
   "success": true,
-  "data": {
-    "transactions": [...],
-    "pagination": {
-      "page": 1,
-      "page_size": 10,
-      "total_count": 42
-    }
-  },
-  "timestamp": "2025-10-01 12:00:00"
+  "data": { ... },
+  "timestamp": "2025-10-06 12:00:00"
 }
 ```
 
-### Error Response
-
+Errors:
 ```json
 {
   "success": false,
   "error": {
-    "code": "ERROR_CODE",
-    "message": "Error description",
-    "timestamp": "2025-10-01 12:00:00"
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid date format",
+    "timestamp": "2025-10-06 12:00:00"
   }
 }
 ```
 
-## Common Use Cases
+## Common Filters
 
-### Daily Transaction Report
-
-```bash
-curl "http://localhost:8000/reports.php?action=summary&start_date=2025-09-30&end_date=2025-09-30"
-```
-
-### Find Specific Transaction
-
-```bash
-curl "http://localhost:8000/reports.php?action=search&transaction_id=TRN_abc123"
-```
-
-### Export Monthly Transactions
-
-```bash
-curl "http://localhost:8000/reports.php?action=export&format=csv&start_date=2025-09-01&end_date=2025-09-30" -o september_transactions.csv
-```
-
-### Analyze Declines
-
-```bash
-curl "http://localhost:8000/reports.php?action=declines&start_date=2025-09-01&end_date=2025-09-30"
-```
-
-### Check Settlement Status
-
-```bash
-curl "http://localhost:8000/reports.php?action=settlement&start_date=2025-09-30"
-```
+All search endpoints support:
+- Date ranges: `start_date` and `end_date`
+- Pagination: `page` and `page_size`
+- Status filtering where applicable
 
 ## Notes
 
-- **Date Format**: All dates must be in `YYYY-MM-DD` format
-- **Pagination**: Page size is limited to 100 items maximum
-- **Export Limits**: Exports are capped at 1000 transactions
-- **Timestamps**: All response timestamps use `YYYY-MM-DD HH:mm:ss` format
-
-## API Documentation
-
-View complete API documentation:
-
-```bash
-curl http://localhost:8000/reports.php
-```
+- Dates must be YYYY-MM-DD format
+- Page size max is 100 (search/disputes/deposits)
+- Export limit is 1000 records
+- All timestamps are UTC
+- Transaction IDs start with `TRN_`
