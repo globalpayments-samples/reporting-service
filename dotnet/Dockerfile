@@ -18,8 +18,8 @@ WORKDIR /app
 # Copy built application
 COPY --from=builder /app/out .
 
-# Create non-root user
-# RUN useradd --create-home --shell /bin/bash app
+# Note: ASP.NET images already include a non-root user 'app'
+# No need to create the user, just switch to it
 USER app
 
 EXPOSE 8000
