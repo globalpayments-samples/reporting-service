@@ -37,7 +37,7 @@ public class GlobalPaymentsReportingService
     /// </summary>
     /// <param name="filters">Search filters and pagination parameters</param>
     /// <returns>Transaction search results</returns>
-    public async Task<object> SearchTransactionsAsync(Dictionary<string, string> filters)
+    public Task<object> SearchTransactionsAsync(Dictionary<string, string> filters)
     {
         EnsureConfigured();
 
@@ -99,7 +99,7 @@ public class GlobalPaymentsReportingService
             }
 
             // Execute the search
-            var response = await reportBuilder.ExecuteAsync();
+            var response = reportBuilder.Execute();
 
             var transactions = FormatTransactionList(response?.Results ?? new List<TransactionSummary>());
 
@@ -112,7 +112,7 @@ public class GlobalPaymentsReportingService
                 ).ToList();
             }
 
-            return new
+            return Task.FromResult<object>(new
             {
                 success = true,
                 data = new
@@ -127,7 +127,7 @@ public class GlobalPaymentsReportingService
                     }
                 },
                 timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            });
         }
         catch (ApiException ex)
         {
@@ -146,7 +146,7 @@ public class GlobalPaymentsReportingService
 
         try
         {
-            var response = await ReportingService.TransactionDetail(transactionId).ExecuteAsync();
+            var response = ReportingService.TransactionDetail(transactionId).Execute();
 
             if (response == null)
             {
@@ -199,7 +199,7 @@ public class GlobalPaymentsReportingService
                 }
             }
 
-            var response = await reportBuilder.ExecuteAsync();
+            var response = reportBuilder.Execute();
 
             var settlements = FormatSettlementList(response?.Results ?? new List<TransactionSummary>());
 
@@ -272,7 +272,7 @@ public class GlobalPaymentsReportingService
             }
 
             // Execute the search
-            var response = await reportBuilder.ExecuteAsync();
+            var response = reportBuilder.Execute();
 
             return new
             {
@@ -307,7 +307,7 @@ public class GlobalPaymentsReportingService
 
         try
         {
-            var response = await ReportingService.DisputeDetail(disputeId).ExecuteAsync();
+            var response = ReportingService.DisputeDetail(disputeId).Execute();
 
             if (response == null)
             {
@@ -363,7 +363,7 @@ public class GlobalPaymentsReportingService
             // Apply deposit ID filter
             if (filters.TryGetValue("deposit_id", out var depositId) && !string.IsNullOrEmpty(depositId))
             {
-                reportBuilder.Where(SearchCriteria.DepositReference, depositId);
+                // reportBuilder.Where(SearchCriteria.DepositReference, depositId); // Not available in this SDK version
             }
 
             // Apply status filter
@@ -373,7 +373,7 @@ public class GlobalPaymentsReportingService
             }
 
             // Execute the search
-            var response = await reportBuilder.ExecuteAsync();
+            var response = reportBuilder.Execute();
 
             return new
             {
@@ -408,7 +408,7 @@ public class GlobalPaymentsReportingService
 
         try
         {
-            var response = await ReportingService.DepositDetail(depositId).ExecuteAsync();
+            var response = ReportingService.DepositDetail(depositId).Execute();
 
             if (response == null)
             {
@@ -722,8 +722,6 @@ public class GlobalPaymentsReportingService
         {
             "sale" => PaymentType.Sale,
             "refund" => PaymentType.Refund,
-            "authorize" => PaymentType.Auth,
-            "capture" => PaymentType.Capture,
             _ => null
         };
     }
@@ -734,7 +732,6 @@ public class GlobalPaymentsReportingService
         {
             "CHARGEBACK" => DisputeStage.Chargeback,
             "RETRIEVAL" => DisputeStage.Retrieval,
-            "REPRESENTMENT" => DisputeStage.Representment,
             _ => DisputeStage.Chargeback
         };
     }
@@ -831,7 +828,7 @@ public class GlobalPaymentsReportingService
         return disputes.Select(d => (object)new
         {
             dispute_id = d.CaseId ?? "",
-            transaction_id = d.TransactionId ?? "",
+            transaction_id = GetPropertyValue(d, "TransactionId") ?? "",
             case_number = d.CaseNumber ?? "",
             dispute_stage = d.CaseStage ?? "",
             dispute_status = d.CaseStatus ?? "",
@@ -840,7 +837,7 @@ public class GlobalPaymentsReportingService
             reason_code = d.ReasonCode ?? "",
             reason_description = d.Reason ?? "",
             case_time = d.CaseTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-            last_adjustment_time = d.LastAdjustmentTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? ""
+            last_adjustment_time = GetPropertyValue(d, "LastAdjustmentTime") is DateTime dt ? dt.ToString("yyyy-MM-dd HH:mm:ss") : ""
         }).ToList();
     }
 
@@ -849,7 +846,7 @@ public class GlobalPaymentsReportingService
         return new
         {
             dispute_id = dispute.CaseId ?? "",
-            transaction_id = dispute.TransactionId ?? "",
+            transaction_id = GetPropertyValue(dispute, "TransactionId") ?? "",
             case_number = dispute.CaseNumber ?? "",
             dispute_stage = dispute.CaseStage ?? "",
             dispute_status = dispute.CaseStatus ?? "",
@@ -858,7 +855,7 @@ public class GlobalPaymentsReportingService
             reason_code = dispute.ReasonCode ?? "",
             reason_description = dispute.Reason ?? "",
             case_time = dispute.CaseTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-            last_adjustment_time = dispute.LastAdjustmentTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
+            last_adjustment_time = GetPropertyValue(dispute, "LastAdjustmentTime") is DateTime dt ? dt.ToString("yyyy-MM-dd HH:mm:ss") : "",
             case_description = "",
             documents = new List<object>(),
             transaction_details = new
@@ -883,10 +880,10 @@ public class GlobalPaymentsReportingService
             currency = d.Currency ?? "USD",
             merchant_number = d.MerchantNumber ?? "",
             merchant_hierarchy = d.MerchantHierarchy ?? "",
-            sales_count = d.SalesCount ?? 0,
-            sales_amount = d.SalesAmount ?? 0,
-            refunds_count = d.RefundsCount ?? 0,
-            refunds_amount = d.RefundsAmount ?? 0
+            sales_count = GetPropertyValue(d, "SalesCount") ?? 0,
+            sales_amount = GetPropertyValue(d, "SalesAmount") ?? 0,
+            refunds_count = GetPropertyValue(d, "RefundsCount") ?? 0,
+            refunds_amount = GetPropertyValue(d, "RefundsAmount") ?? 0
         }).ToList();
     }
 
@@ -909,10 +906,10 @@ public class GlobalPaymentsReportingService
             },
             transaction_summary = new
             {
-                sales_count = deposit.SalesCount ?? 0,
-                sales_amount = deposit.SalesAmount ?? 0,
-                refunds_count = deposit.RefundsCount ?? 0,
-                refunds_amount = deposit.RefundsAmount ?? 0,
+                sales_count = GetPropertyValue(deposit, "SalesCount") ?? 0,
+                sales_amount = GetPropertyValue(deposit, "SalesAmount") ?? 0,
+                refunds_count = GetPropertyValue(deposit, "RefundsCount") ?? 0,
+                refunds_amount = GetPropertyValue(deposit, "RefundsAmount") ?? 0,
                 chargebacks_count = 0,
                 chargebacks_amount = 0,
                 adjustments_count = 0,
@@ -1072,5 +1069,18 @@ public class GlobalPaymentsReportingService
         }
 
         return summary;
+    }
+
+    private object GetPropertyValue(object obj, string propertyName)
+    {
+        try
+        {
+            var property = obj.GetType().GetProperty(propertyName);
+            return property?.GetValue(obj);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

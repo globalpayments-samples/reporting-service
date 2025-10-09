@@ -378,7 +378,7 @@
 
             const queryString = buildQueryString();
 
-            fetch(`/api/reports?action=search&${queryString}`)
+            fetch(`/api/reports/search?${queryString}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.data.transactions && data.data.transactions.length > 0) {

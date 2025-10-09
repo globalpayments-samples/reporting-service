@@ -1,6 +1,8 @@
 using GlobalPayments.Api;
 using GlobalPayments.Api.Entities;
+using GlobalPayments.Api.Entities.Enums;
 using GlobalPayments.Api.PaymentMethods;
+using GlobalPayments.Api.ServiceConfigs;
 using CardPaymentSample.Services;
 using dotenv.net;
 
@@ -65,18 +67,36 @@ public class Program
     }
 
     /// <summary>
-    /// Configures the Global Payments SDK with necessary credentials and settings.
-    /// This must be called before processing any payments.
+    /// Configures the Global Payments SDK with GP-API credentials and settings.
+    /// This must be called before processing any payments and reporting.
     /// </summary>
     private static void ConfigureGlobalPaymentsSDK()
     {
-        ServicesContainer.ConfigureService(new PorticoConfig
+        var appId = System.Environment.GetEnvironmentVariable("GP_API_APP_ID");
+        var appKey = System.Environment.GetEnvironmentVariable("GP_API_APP_KEY");
+        
+        if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appKey))
         {
-            SecretApiKey = System.Environment.GetEnvironmentVariable("SECRET_API_KEY"),
-            DeveloperId = "000000",
-            VersionNumber = "0000",
-            ServiceUrl = "https://cert.api2.heartlandportico.com"
-        });
+            Console.WriteLine("WARNING: GP_API_APP_ID or GP_API_APP_KEY environment variable is not set");
+            return; // Don't throw exception, just log warning
+        }
+
+        try
+        {
+            ServicesContainer.ConfigureService(new GpApiConfig
+            {
+                AppId = appId,
+                AppKey = appKey,
+                Environment = GlobalPayments.Api.Entities.Environment.TEST,
+                Channel = Channel.CardNotPresent
+            });
+            Console.WriteLine("Global Payments GP-API SDK configured successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to configure Global Payments GP-API SDK: {ex.Message}");
+            // Don't throw, just log the error
+        }
     }
 
     /// <summary>

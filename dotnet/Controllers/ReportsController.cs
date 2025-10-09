@@ -640,14 +640,14 @@ public class ReportsController : ControllerBase
                     sdk_status = new
                     {
                         configured = true,
-                        environment = Environment.GetEnvironmentVariable("GP_ENVIRONMENT") ?? "sandbox",
+                        environment = System.Environment.GetEnvironmentVariable("GP_ENVIRONMENT") ?? "sandbox",
                         sdk_version = "9.0.16"
                     },
                     environment_validation = new
                     {
-                        has_app_id = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GP_APP_ID")),
-                        has_app_key = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GP_APP_KEY")),
-                        environment_configured = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GP_ENVIRONMENT"))
+                        has_app_id = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_APP_ID")),
+                        has_app_key = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_APP_KEY")),
+                        environment_configured = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_ENVIRONMENT"))
                     },
                     api_endpoints = new
                     {
