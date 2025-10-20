@@ -823,85 +823,37 @@ public class ReportingService {
         }
     }
 
-    private Date parseDate(String dateStr) {
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-            sdf.setLenient(false);
-            return sdf.parse(dateStr);
-        } catch (java.text.ParseException e) {
-            throw new IllegalArgumentException("Invalid date format: " + dateStr + ". Expected format: yyyy-MM-dd");
-        }
-    }
-
-    private String getCurrentTimestamp() {
-        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-    }
-
-    private List<Map<String, Object>> formatTransactionList(List<TransactionSummary> transactions) {
-        return transactions.stream().map(transaction -> {
-            Map<String, Object> formatted = new HashMap<>();
-            formatted.put("transaction_id", transaction.getTransactionId());
-            // Normalize timestamp to ISO-8601 string if available
-            try {
-                if (transaction.getTransactionDate() != null) {
-                    Date d = transaction.getTransactionDate().toDate();
-                    formatted.put("timestamp", new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX").format(d));
-                } else if (transaction.getTransactionTime() != null) {
-                    formatted.put("timestamp", transaction.getTransactionTime());
-                } else {
-                    formatted.put("timestamp", null);
-                }
-            } catch (Exception ex) {
-                formatted.put("timestamp", null);
-            }
-
-            // Choose the most appropriate amount field available
-            BigDecimal amt = null;
-            try {
-                if (transaction.getAmount() != null) {
-                    amt = transaction.getAmount();
-                } else if (transaction.getRequestAmount() != null) {
-                    amt = transaction.getRequestAmount();
-                } else if (transaction.getSettlementAmount() != null) {
-                    amt = transaction.getSettlementAmount();
-                } else if (transaction.getTotalAmount() != null) {
-                    try {
-                        amt = new BigDecimal(transaction.getTotalAmount());
-                    } catch (Exception ignore) {
-                        amt = null;
-                    }
-                }
-            } catch (Exception ignore) {
-                amt = null;
-            }
-            formatted.put("amount", amt);
-            formatted.put("currency", transaction.getCurrency());
-            formatted.put("status", transaction.getTransactionStatus());
-            formatted.put("payment_method", transaction.getPaymentType());
-            formatted.put("card_last_four", transaction.getMaskedCardNumber());
-            formatted.put("auth_code", transaction.getAuthCode());
-            formatted.put("reference_number", transaction.getReferenceNumber());
-            return formatted;
-        }).collect(Collectors.toList());
-    }
-
-    private Map<String, Object> formatTransactionSummary(TransactionSummary transaction) {
-        Map<String, Object> details = new HashMap<>();
-        details.put("transaction_id", transaction.getTransactionId());
+    /**
+     * Extract timestamp from a transaction summary object
+     * Attempts to get the most appropriate timestamp available
+     *
+     * @param transaction The transaction summary object
+     * @return Formatted timestamp string or null if not available
+     */
+    private String extractTransactionTimestamp(TransactionSummary transaction) {
         try {
             if (transaction.getTransactionDate() != null) {
                 Date d = transaction.getTransactionDate().toDate();
-                details.put("timestamp", new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX").format(d));
+                return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX").format(d);
             } else if (transaction.getTransactionTime() != null) {
-                details.put("timestamp", transaction.getTransactionTime());
+                return transaction.getTransactionTime();
             } else {
-                details.put("timestamp", null);
+                return null;
             }
         } catch (Exception ex) {
-            details.put("timestamp", null);
+            return null;
         }
+    }
 
-        // Amount fallback logic (prefer amount, then requestAmount, settlementAmount, then totalAmount string)
+    /**
+     * Extract amount from a transaction summary object
+     * Attempts to get the most appropriate amount field available
+     * Priority: amount > requestAmount > settlementAmount > totalAmount
+     *
+     * @param transaction The transaction summary object
+     * @return BigDecimal amount or null if not available
+     */
+    private BigDecimal extractTransactionAmount(TransactionSummary transaction) {
         BigDecimal amt = null;
         try {
             if (transaction.getAmount() != null) {
@@ -920,7 +872,44 @@ public class ReportingService {
         } catch (Exception ignore) {
             amt = null;
         }
-        details.put("amount", amt);
+        return amt;
+    }
+
+    private Date parseDate(String dateStr) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+            sdf.setLenient(false);
+            return sdf.parse(dateStr);
+        } catch (java.text.ParseException e) {
+            throw new IllegalArgumentException("Invalid date format: " + dateStr + ". Expected format: yyyy-MM-dd");
+        }
+    }
+
+    private String getCurrentTimestamp() {
+        return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+    }
+
+    private List<Map<String, Object>> formatTransactionList(List<TransactionSummary> transactions) {
+        return transactions.stream().map(transaction -> {
+            Map<String, Object> formatted = new HashMap<>();
+            formatted.put("transaction_id", transaction.getTransactionId());
+            formatted.put("timestamp", extractTransactionTimestamp(transaction));
+            formatted.put("amount", extractTransactionAmount(transaction));
+            formatted.put("currency", transaction.getCurrency());
+            formatted.put("status", transaction.getTransactionStatus());
+            formatted.put("payment_method", transaction.getPaymentType());
+            formatted.put("card_last_four", transaction.getMaskedCardNumber());
+            formatted.put("auth_code", transaction.getAuthCode());
+            formatted.put("reference_number", transaction.getReferenceNumber());
+            return formatted;
+        }).collect(Collectors.toList());
+    }
+
+    private Map<String, Object> formatTransactionSummary(TransactionSummary transaction) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("transaction_id", transaction.getTransactionId());
+        details.put("timestamp", extractTransactionTimestamp(transaction));
+        details.put("amount", extractTransactionAmount(transaction));
         details.put("currency", transaction.getCurrency());
         details.put("status", transaction.getTransactionStatus());
         details.put("payment_method", transaction.getPaymentType());
