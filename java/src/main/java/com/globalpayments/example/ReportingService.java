@@ -104,17 +104,18 @@ public class ReportingService {
 
             if (filters.containsKey("end_date")) {
                 Date endDate = parseDate((String) filters.get("end_date"));
-                builder.and(SearchCriteria.EndDate, endDate);
+                builder.getSearchBuilder().and(SearchCriteria.EndDate, endDate);
             }
 
             // Apply transaction ID filter
             if (filters.containsKey("transaction_id")) {
-                builder.and(SearchCriteria.TransactionId, filters.get("transaction_id"));
+                // SDK uses ClientTransactionId for client-supplied transaction identifiers
+                builder.getSearchBuilder().and(SearchCriteria.ClientTransactionId, filters.get("transaction_id"));
             }
 
             // Apply payment type filter
             if (filters.containsKey("payment_type")) {
-                builder.and(SearchCriteria.PaymentType, filters.get("payment_type"));
+                builder.getSearchBuilder().and(SearchCriteria.PaymentType, filters.get("payment_type"));
             }
 
             // Note: Amount filtering may need to be done client-side
@@ -131,7 +132,7 @@ public class ReportingService {
 
             // Apply card filter
             if (filters.containsKey("card_last_four")) {
-                builder.and(SearchCriteria.CardNumberLastFour, filters.get("card_last_four"));
+                builder.getSearchBuilder().and(SearchCriteria.CardNumberLastFour, filters.get("card_last_four"));
             }
 
             // Execute search
@@ -257,7 +258,7 @@ public class ReportingService {
 
             if (params.containsKey("end_date")) {
                 Date endDate = parseDate((String) params.get("end_date"));
-                builder.and(SearchCriteria.EndDate, endDate);
+                builder.getSearchBuilder().and(SearchCriteria.EndDate, endDate);
             }
 
             TransactionSummaryPaged response = builder.execute();
@@ -325,16 +326,16 @@ public class ReportingService {
 
             if (filters.containsKey("end_date")) {
                 Date endDate = parseDate((String) filters.get("end_date"));
-                builder.and(SearchCriteria.EndDate, endDate);
+                builder.getSearchBuilder().and(SearchCriteria.EndDate, endDate);
             }
 
             // Apply stage and status filters
             if (filters.containsKey("stage")) {
-                builder.and(SearchCriteria.DisputeStage, filters.get("stage"));
+                builder.getSearchBuilder().and(SearchCriteria.DisputeStage, filters.get("stage"));
             }
 
             if (filters.containsKey("status")) {
-                builder.and(SearchCriteria.DisputeStatus, filters.get("status"));
+                builder.getSearchBuilder().and(SearchCriteria.DisputeStatus, filters.get("status"));
             }
 
             DisputeSummaryPaged response = builder.execute();
@@ -429,17 +430,17 @@ public class ReportingService {
 
             if (filters.containsKey("end_date")) {
                 Date endDate = parseDate((String) filters.get("end_date"));
-                builder.and(SearchCriteria.EndDate, endDate);
+                builder.getSearchBuilder().and(SearchCriteria.EndDate, endDate);
             }
 
             // Apply deposit ID filter
             if (filters.containsKey("deposit_id")) {
-                builder.and(SearchCriteria.DepositId, filters.get("deposit_id"));
+                builder.getSearchBuilder().and(SearchCriteria.DepositId, filters.get("deposit_id"));
             }
 
             // Apply status filter
             if (filters.containsKey("status")) {
-                builder.and(SearchCriteria.DepositStatus, filters.get("status"));
+                builder.getSearchBuilder().and(SearchCriteria.DepositStatus, filters.get("status"));
             }
 
             DepositSummaryPaged response = builder.execute();
@@ -822,6 +823,58 @@ public class ReportingService {
         }
     }
 
+    /**
+     * Extract timestamp from a transaction summary object
+     * Attempts to get the most appropriate timestamp available
+     *
+     * @param transaction The transaction summary object
+     * @return Formatted timestamp string or null if not available
+     */
+    private String extractTransactionTimestamp(TransactionSummary transaction) {
+        try {
+            if (transaction.getTransactionDate() != null) {
+                Date d = transaction.getTransactionDate().toDate();
+                return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX").format(d);
+            } else if (transaction.getTransactionTime() != null) {
+                return transaction.getTransactionTime();
+            } else {
+                return null;
+            }
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    /**
+     * Extract amount from a transaction summary object
+     * Attempts to get the most appropriate amount field available
+     * Priority: amount > requestAmount > settlementAmount > totalAmount
+     *
+     * @param transaction The transaction summary object
+     * @return BigDecimal amount or null if not available
+     */
+    private BigDecimal extractTransactionAmount(TransactionSummary transaction) {
+        BigDecimal amt = null;
+        try {
+            if (transaction.getAmount() != null) {
+                amt = transaction.getAmount();
+            } else if (transaction.getRequestAmount() != null) {
+                amt = transaction.getRequestAmount();
+            } else if (transaction.getSettlementAmount() != null) {
+                amt = transaction.getSettlementAmount();
+            } else if (transaction.getTotalAmount() != null) {
+                try {
+                    amt = new BigDecimal(transaction.getTotalAmount());
+                } catch (Exception ignore) {
+                    amt = null;
+                }
+            }
+        } catch (Exception ignore) {
+            amt = null;
+        }
+        return amt;
+    }
+
     private Date parseDate(String dateStr) {
         try {
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
@@ -840,8 +893,8 @@ public class ReportingService {
         return transactions.stream().map(transaction -> {
             Map<String, Object> formatted = new HashMap<>();
             formatted.put("transaction_id", transaction.getTransactionId());
-            formatted.put("timestamp", transaction.getTransactionDate());
-            formatted.put("amount", transaction.getAmount());
+            formatted.put("timestamp", extractTransactionTimestamp(transaction));
+            formatted.put("amount", extractTransactionAmount(transaction));
             formatted.put("currency", transaction.getCurrency());
             formatted.put("status", transaction.getTransactionStatus());
             formatted.put("payment_method", transaction.getPaymentType());
@@ -855,8 +908,8 @@ public class ReportingService {
     private Map<String, Object> formatTransactionSummary(TransactionSummary transaction) {
         Map<String, Object> details = new HashMap<>();
         details.put("transaction_id", transaction.getTransactionId());
-        details.put("timestamp", transaction.getTransactionDate());
-        details.put("amount", transaction.getAmount());
+        details.put("timestamp", extractTransactionTimestamp(transaction));
+        details.put("amount", extractTransactionAmount(transaction));
         details.put("currency", transaction.getCurrency());
         details.put("status", transaction.getTransactionStatus());
         details.put("payment_method", transaction.getPaymentType());
@@ -920,7 +973,12 @@ public class ReportingService {
             formatted.put("reason_code", dispute.getReasonCode());
             formatted.put("reason_description", dispute.getReason());
             formatted.put("case_time", dispute.getCaseTime());
-            formatted.put("last_adjustment_time", dispute.getLastAdjustmentTime());
+            // SDK exposes caseTime (DateTime) — use that as the closest available timestamp
+            try {
+                formatted.put("last_adjustment_time", dispute.getCaseTime() != null ? dispute.getCaseTime().toDate() : null);
+            } catch (Exception ex) {
+                formatted.put("last_adjustment_time", null);
+            }
             return formatted;
         }).collect(Collectors.toList());
     }
@@ -937,7 +995,11 @@ public class ReportingService {
         details.put("reason_code", dispute.getReasonCode());
         details.put("reason_description", dispute.getReason());
         details.put("case_time", dispute.getCaseTime());
-        details.put("last_adjustment_time", dispute.getLastAdjustmentTime());
+        try {
+            details.put("last_adjustment_time", dispute.getCaseTime() != null ? dispute.getCaseTime().toDate() : null);
+        } catch (Exception ex) {
+            details.put("last_adjustment_time", null);
+        }
         details.put("case_description", dispute.getCaseDescription());
 
         Map<String, Object> transactionDetails = new HashMap<>();

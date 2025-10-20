@@ -378,7 +378,7 @@
 
             const queryString = buildQueryString();
 
-            fetch(`/api/reports?action=search&${queryString}`)
+            fetch(`/reports?action=search&${queryString}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.data.transactions && data.data.transactions.length > 0) {
@@ -509,7 +509,7 @@
             `;
             modal.style.display = 'block';
 
-            fetch(`/api/reports?action=detail&transaction_id=${encodeURIComponent(transactionId)}`)
+            fetch(`/reports?action=detail&transaction_id=${encodeURIComponent(transactionId)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.data) {
@@ -589,7 +589,7 @@
                 .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(currentFilters[key])}`)
                 .join('&');
 
-            const url = `/api/reports?action=export&format=${format}&page_size=1000&${queryString}`;
+            const url = `/reports?action=export&format=${format}&page_size=1000&${queryString}`;
 
             if (format === 'csv') {
                 // For CSV, trigger download
