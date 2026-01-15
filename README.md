@@ -4,12 +4,10 @@ A complete transaction reporting service for Global Payments, providing interact
 
 ## Available Implementations
 
-- [.NET Core](./dotnet/) - ASP.NET Core web application
-- [Go](./go/) - Go HTTP server application
-- [Java](./java/) - Jakarta EE servlet-based web application
-- [Node.js](./nodejs/) - Express.js web application
-- [PHP](./php/) - PHP web application
-- [Python](./python/) - Flask web application
+- [.NET Core](./dotnet/) - ([Preview](https://githubbox.com/globalpayments-samples/reporting-service/tree/main/dotnet)) - ASP.NET Core web application
+- [Java](./java/) - ([Preview](https://githubbox.com/globalpayments-samples/reporting-service/tree/main/java)) - Jakarta EE servlet-based web application
+- [Node.js](./nodejs/) - ([Preview](https://githubbox.com/globalpayments-samples/reporting-service/tree/main/nodejs)) - Express.js web application
+- [PHP](./php/) - ([Preview](https://githubbox.com/globalpayments-samples/reporting-service/tree/main/php)) - PHP web application
 
 ## Features
 
@@ -47,7 +45,7 @@ Each implementation includes comprehensive reporting features:
 
 ## Quick Start
 
-1. **Choose your language** - Navigate to any implementation directory (nodejs, python, php, java, dotnet, go)
+1. **Choose your language** - Navigate to any implementation directory (nodejs, php, java, dotnet)
 2. **Set up credentials** - Copy `.env.sample` to `.env` and add your Global Payments API keys
 3. **Install dependencies** - Run the installation command for your language (see individual READMEs)
 4. **Start the server** - Execute `./run.sh` or use the language-specific run command
@@ -71,7 +69,7 @@ This reporting service is ideal for:
 
 - Global Payments account with API credentials
 - Development environment for your chosen language
-- Package manager (npm, pip, composer, maven, dotnet, go mod)
+- Package manager (npm, composer, maven, dotnet)
 
 ## Docker Support
 
@@ -87,10 +85,8 @@ docker-compose up
 
 # Services will be available at:
 # - Node.js: http://localhost:8001
-# - Python: http://localhost:8002
 # - PHP: http://localhost:8003
 # - Java: http://localhost:8004
-# - Go: http://localhost:8005
 # - .NET: http://localhost:8006
 ```
 

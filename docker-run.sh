@@ -52,7 +52,7 @@ build_images() {
 
 start_services() {
     echo -e "${BLUE}🚀 Starting payment services...${NC}"
-    docker-compose up -d nodejs python php java go dotnet
+    docker-compose up -d nodejs php java dotnet
     
     echo -e "${YELLOW}⏳ Waiting for services to be healthy...${NC}"
     docker-compose ps
@@ -61,10 +61,8 @@ start_services() {
     echo ""
     echo "Services available at:"
     echo "  Node.js: http://localhost:8001"
-    echo "  Python:  http://localhost:8002"
     echo "  PHP:     http://localhost:8003"
     echo "  Java:    http://localhost:8004"
-    echo "  Go:      http://localhost:8005"
     echo "  .NET:    http://localhost:8006"
 }
 
@@ -82,7 +80,7 @@ run_tests() {
     
     # Start services if not running
     echo -e "${YELLOW}📋 Ensuring services are running...${NC}"
-    docker-compose up -d nodejs python php java go dotnet
+    docker-compose up -d nodejs php java dotnet
     
     # Wait for services to be healthy
     echo -e "${YELLOW}⏳ Waiting for services to be ready...${NC}"
@@ -99,7 +97,7 @@ run_tests() {
 run_single_test() {
     local impl=$1
     if [ -z "$impl" ]; then
-        echo -e "${RED}❌ Please specify implementation: nodejs, python, php, java, go, or dotnet${NC}"
+        echo -e "${RED}❌ Please specify implementation: nodejs, php, java, or dotnet${NC}"
         exit 1
     fi
     
