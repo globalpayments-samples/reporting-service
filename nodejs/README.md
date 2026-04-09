@@ -4,9 +4,9 @@ A comprehensive Node.js implementation for Global Payments payment processing an
 
 ## Requirements
 
-- Node.js 14.x or later
-- npm (Node Package Manager)
-- Global Payments account and API credentials
+- Node.js 18+
+- npm
+- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
 
 ## Quick Start
 
@@ -14,15 +14,9 @@ A comprehensive Node.js implementation for Global Payments payment processing an
 
 Copy `.env.sample` to `.env` and add your credentials:
 
-```properties
-# Payment Processing (Portico API)
-PUBLIC_API_KEY=pkapi_cert_your_public_key
-SECRET_API_KEY=skapi_cert_your_secret_key
-
-# Transaction Reporting (GP-API)
-GP_API_APP_ID=your_app_id_here
-GP_API_APP_KEY=your_app_key_here
-GP_API_ENVIRONMENT=TEST  # or PRODUCTION
+```env
+PUBLIC_API_KEY=pkapi_cert_your_key_here
+SECRET_API_KEY=skapi_cert_your_key_here
 ```
 
 ### 2. Install Dependencies
@@ -158,11 +152,8 @@ curl "http://localhost:8000/api/reports?action=export&format=csv&start_date=2025
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PUBLIC_API_KEY` | Yes | Portico public API key for payment processing |
-| `SECRET_API_KEY` | Yes | Portico secret API key for payment processing |
-| `GP_API_APP_ID` | Yes | GP-API App ID for reporting |
-| `GP_API_APP_KEY` | Yes | GP-API App Key for reporting |
-| `GP_API_ENVIRONMENT` | No | TEST or PRODUCTION (default: TEST) |
+| `PUBLIC_API_KEY` | Yes | Portico public key for payment processing |
+| `SECRET_API_KEY` | Yes | Portico secret key for payment processing |
 | `PORT` | No | Server port (default: 8000) |
 
 ## Troubleshooting
@@ -182,13 +173,9 @@ PORT=8080 npm start
 - Verify `PUBLIC_API_KEY` and `SECRET_API_KEY` are correct
 - Ensure using test credentials for test environment
 
-**Reporting not working?**
-- Verify `GP_API_APP_ID` and `GP_API_APP_KEY` are correct
-- These are different from payment processing credentials
-
 **npm install fails?**
-- Ensure Node.js 14+ is installed
-- Try removing `node_modules` and `package-lock.json`, then run `npm install` again
+- Ensure Node.js 18+ is installed: `node --version`
+- Remove `node_modules` and retry: `rm -rf node_modules && npm install`
 
 ## Documentation
 
