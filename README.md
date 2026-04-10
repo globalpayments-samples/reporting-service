@@ -51,7 +51,7 @@ Browser (three-tab UI)
 
 ## Prerequisites
 
-- Global Payments developer account with Portico credentials — [Sign up at developer.globalpay.com](https://developer.globalpay.com)
+- Global Payments developer account with Portico credentials — [Sign up at developer.globalpayments.com](https://developer.globalpayments.com)
 - Two API keys from your Portico account:
   - `PUBLIC_API_KEY` — prefixed `pkapi_cert_...` (sandbox)
   - `SECRET_API_KEY` — prefixed `skapi_cert_...` (sandbox)
