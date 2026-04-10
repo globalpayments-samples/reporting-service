@@ -104,7 +104,7 @@ nodejs/
 ### Processing a Payment
 
 1. Open http://localhost:8000/index.html in your browser
-2. Use test card: `4263970000005262`
+2. Use test card: `4012002000060016`
 3. Enter any future expiration date
 4. Enter CVV: `123`
 5. Enter billing ZIP code
@@ -132,9 +132,9 @@ curl "http://localhost:8000/api/reports?action=export&format=csv&start_date=2025
 
 | Card Type | Number | CVV | Expiry |
 |-----------|--------|-----|--------|
-| Visa | 4263970000005262 | 123 | Any future date |
-| Mastercard | 5425230000004415 | 123 | Any future date |
-| Amex | 374101000000608 | 1234 | Any future date |
+| Visa | 4012002000060016 | 123 | Any future date |
+| Mastercard | 5473500000000014 | 123 | Any future date |
+| Amex | 372700699251018 | 1234 | Any future date |
 
 ### Testing Workflow
 
@@ -181,10 +181,10 @@ PORT=8080 npm start
 
 - **Payment Processing**: See API Endpoints section above
 - **Transaction Reporting**: See [REPORTING_README.md](REPORTING_README.md)
-- **Global Payments Docs**: https://developer.globalpay.com
+- **Global Payments Docs**: https://developer.globalpayments.com
 
 ## Support
 
 For issues or questions:
-- Global Payments Developer Portal: https://developer.globalpay.com
+- Global Payments Developer Portal: https://developer.globalpayments.com
 - SDK Documentation: https://github.com/globalpayments/nodejs-sdk
