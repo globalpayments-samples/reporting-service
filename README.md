@@ -1,6 +1,6 @@
 # Reporting Service
 
-A complete transaction reporting service built on the Global Payments Portico gateway. Developers can search, filter, and export transaction data through an interactive web UI and REST API, covering settlements, disputes, deposits, and batch details — alongside live credit card payment processing.
+A complete transaction reporting service built on the Global Payments Portico gateway. Developers can search, filter, and export transaction data through an interactive web UI and REST API, covering settlements, disputes, deposits, and batch details — alongside live credit card payment processing. All implementations use the official Global Payments SDK (dual config: `PorticoConfig` for payments, `GpApiConfig` for reporting).
 
 Available in six languages: PHP, Node.js, .NET, Java, Python, and Go.
 
