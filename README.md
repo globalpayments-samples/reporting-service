@@ -36,7 +36,7 @@ The service exposes two categories of endpoints under a three-tab UI:
 Browser (three-tab UI)
   │
   ├─ Tab 1: Payment Form
-  │   ├─ GET /config ─────► publicApiKey for Heartland.js initialization
+  │   ├─ GET /config ─────► publicApiKey for globalpayments.js initialization
   │   └─ POST /process-payment ─────► SDK: CreditCardData.charge().execute()
   │
   ├─ Tab 2: API Documentation
@@ -163,7 +163,7 @@ docker-compose --profile testing up
 
 ### `GET /config`
 
-Returns the public API key for Heartland.js initialization on the payment form.
+Returns the public API key for globalpayments.js initialization on the payment form.
 
 **Response:**
 ```json

@@ -95,7 +95,7 @@ PHP uses separate files per endpoint rather than a router:
 
 ### `GET /config.php`
 
-Returns public API key for Heartland.js hosted fields initialization.
+Returns public API key for globalpayments.js hosted fields initialization.
 
 **Response:**
 ```json
