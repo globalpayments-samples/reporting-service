@@ -13,15 +13,9 @@ A comprehensive Go implementation for Global Payments payment processing and tra
 
 Copy `.env.sample` to `.env` and add your credentials:
 
-```properties
-# Payment Processing (Portico API)
-PUBLIC_API_KEY=pkapi_cert_your_public_key
-SECRET_API_KEY=skapi_cert_your_secret_key
-
-# Transaction Reporting (GP-API)
-GP_API_APP_ID=your_app_id_here
-GP_API_APP_KEY=your_app_key_here
-GP_API_ENVIRONMENT=TEST  # or PRODUCTION
+```env
+PUBLIC_API_KEY=pkapi_cert_your_key_here
+SECRET_API_KEY=skapi_cert_your_key_here
 ```
 
 ### 2. Install Dependencies
@@ -36,14 +30,13 @@ go mod download
 go run main.go
 ```
 
-The application will start on `http://localhost:8888`
+The application will start on `http://localhost:8000`
 
 ### 4. Verify Setup
 
 Open your browser to:
-- **Web Interface**: http://localhost:8888/
-- **Get Public Key**: http://localhost:8888/config
-- **Reporting Config**: http://localhost:8888/reports/config
+- **Web Interface**: http://localhost:8000/
+- **Get Public Key**: http://localhost:8000/config
 
 ## Features
 
@@ -105,7 +98,7 @@ go/
 ### Processing a Payment
 
 1. Open http://localhost:8888/ in your browser
-2. Use test card: `4263970000005262`
+2. Use test card: `4012002000060016`
 3. Enter any future expiration date
 4. Enter CVV: `123`
 5. Enter billing ZIP code
@@ -133,9 +126,9 @@ curl "http://localhost:8888/reports/export?format=csv&start_date=2025-09-01" -o 
 
 | Card Type | Number | CVV | Expiry |
 |-----------|--------|-----|--------|
-| Visa | 4263970000005262 | 123 | Any future date |
-| Mastercard | 5425230000004415 | 123 | Any future date |
-| Amex | 374101000000608 | 1234 | Any future date |
+| Visa | 4012002000060016 | 123 | Any future date |
+| Mastercard | 5473500000000014 | 123 | Any future date |
+| Amex | 372700699251018 | 1234 | Any future date |
 
 ### Testing Workflow
 
@@ -153,11 +146,8 @@ curl "http://localhost:8888/reports/export?format=csv&start_date=2025-09-01" -o 
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PUBLIC_API_KEY` | Yes | Portico public API key for payment processing |
-| `SECRET_API_KEY` | Yes | Portico secret API key for payment processing |
-| `GP_API_APP_ID` | Yes | GP-API App ID for reporting |
-| `GP_API_APP_KEY` | Yes | GP-API App Key for reporting |
-| `GP_API_ENVIRONMENT` | No | TEST or PRODUCTION (default: TEST) |
+| `PUBLIC_API_KEY` | Yes | Portico public key for payment processing |
+| `SECRET_API_KEY` | Yes | Portico secret key for payment processing |
 
 ## Troubleshooting
 
@@ -187,10 +177,10 @@ curl "http://localhost:8888/reports/export?format=csv&start_date=2025-09-01" -o 
 
 - **Payment Processing**: See API Endpoints section above
 - **Transaction Reporting**: See [REPORTING_README.md](REPORTING_README.md)
-- **Global Payments Docs**: https://developer.globalpay.com
+- **Global Payments Docs**: https://developer.globalpayments.com
 
 ## Support
 
 For issues or questions:
-- Global Payments Developer Portal: https://developer.globalpay.com
+- Global Payments Developer Portal: https://developer.globalpayments.com
 - SDK Documentation: https://github.com/globalpayments/go-sdk

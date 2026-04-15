@@ -1,112 +1,356 @@
-# Global Payments Reporting Service
+# Reporting Service
 
-A complete transaction reporting service for Global Payments, providing interactive search, filtering, and export capabilities across multiple programming languages. Each implementation includes a full-featured web interface with documentation and real-time transaction data visualization.
+A complete transaction reporting service built on the Global Payments Portico gateway. Developers can search, filter, and export transaction data through an interactive web UI and REST API, covering settlements, disputes, deposits, and batch details — alongside live credit card payment processing. All implementations use the official Global Payments SDK (dual config: `PorticoConfig` for payments, `GpApiConfig` for reporting).
+
+Available in six languages: PHP, Node.js, .NET, Java, Python, and Go.
+
+---
 
 ## Available Implementations
 
-- [.NET Core](./dotnet/) - ASP.NET Core web application
-- [Go](./go/) - Go HTTP server application
-- [Java](./java/) - Jakarta EE servlet-based web application
-- [Node.js](./nodejs/) - Express.js web application
-- [PHP](./php/) - PHP web application
-- [Python](./python/) - Flask web application
+| Language | Framework | SDK Version |
+|----------|-----------|-------------|
+| [**PHP**](./php/) | Built-in Server | globalpayments/php-sdk ^13.1 |
+| [**Node.js**](./nodejs/) | Express.js | globalpayments-api ^3.10.6 |
+| [**.NET**](./dotnet/) | ASP.NET Core | GlobalPayments.Api 9.0.16 |
+| [**Java**](./java/) | Jakarta Servlet | globalpayments-sdk 14.2.20 |
+| [**Python**](./python/) | Flask | globalpayments | latest |
+| [**Go**](./go/) | net/http | globalpayments-go | latest |
 
-## Features
+---
 
-- **Interactive Transaction Reports** - Search and view transaction data in real-time
-- **Advanced Filtering** - Filter by date range, status, amount, and more
-- **Data Export** - Export transactions to CSV, JSON, or XML formats
-- **Transaction Details** - Click any transaction to view complete details
-- **Comprehensive Documentation** - Built-in API documentation for each language
-- **Payment Processing** - Process credit card payments with hosted fields
-- **Multiple Languages** - Consistent UI/UX across all implementations
+## How It Works
 
-## Reporting Capabilities
+The service exposes two categories of endpoints under a three-tab UI:
 
-Each implementation includes comprehensive reporting features:
+1. **Payment processing** — charge a card using Portico hosted fields (`POST /process-payment`)
+2. **Transaction reporting** — search and export transaction history via the Reporting SDK (`GET /api/reports?action=...`)
 
-1. **Transaction Search**
-   - Search by date range, status, or transaction ID
-   - Paginated results with customizable page size
-   - Real-time data loading with loading indicators
+```
+Browser (three-tab UI)
+  │
+  ├─ Tab 1: Payment Form
+  │   ├─ GET /config ─────► publicApiKey for globalpayments.js initialization
+  │   └─ POST /process-payment ─────► SDK: CreditCardData.charge().execute()
+  │
+  ├─ Tab 2: API Documentation
+  │   └─ Built-in reference for all reporting endpoints
+  │
+  └─ Tab 3: Transaction Report
+      └─ GET /api/reports?action=search|detail|settlement|export|summary|declines
+          └─ SDK: ReportingService queries via Portico
+```
 
-2. **Reporting API Endpoints**
-   - `GET /reports?action=search` - Search transactions with filters
-   - `GET /reports?action=detail` - Get detailed transaction information
-   - `GET /reports?action=export` - Export data in CSV/JSON/XML formats
-   - `GET /reports?action=summary` - Get transaction summary statistics
-   - `GET /reports?action=declines` - Analyze declined transactions
-   - Additional endpoints for settlements, disputes, deposits, and batches
-
-3. **Interactive UI Features**
-   - Three-tab interface: Payment Form, Documentation, Transaction Report
-   - Collapsible filter panel with multiple filter options
-   - Clickable transaction IDs for detailed views
-   - Export buttons for quick data downloads
-   - Responsive design for mobile and desktop
-
-## Quick Start
-
-1. **Choose your language** - Navigate to any implementation directory (nodejs, python, php, java, dotnet, go)
-2. **Set up credentials** - Copy `.env.sample` to `.env` and add your Global Payments API keys
-3. **Install dependencies** - Run the installation command for your language (see individual READMEs)
-4. **Start the server** - Execute `./run.sh` or use the language-specific run command
-5. **Access the UI** - Open your browser to the specified port and explore the three tabs:
-   - **Payment Form** - Process credit card transactions
-   - **Reporting Documentation** - View API documentation
-   - **Transaction Report** - Search, filter, and export transaction data
-
-## Use Cases
-
-This reporting service is ideal for:
-
-- **Transaction Monitoring** - Real-time oversight of payment activity
-- **Financial Reconciliation** - Export data for accounting and bookkeeping
-- **Customer Support** - Quick lookup of transaction details by ID
-- **Analytics & Reporting** - Generate summaries and analyze payment trends
-- **Dispute Management** - Track and manage chargebacks
-- **Settlement Tracking** - Monitor batch settlements and deposits
+---
 
 ## Prerequisites
 
-- Global Payments account with API credentials
-- Development environment for your chosen language
-- Package manager (npm, pip, composer, maven, dotnet, go mod)
+- Global Payments developer account with Portico credentials — [Sign up at developer.globalpayments.com](https://developer.globalpayments.com)
+- Two API keys from your Portico account:
+  - `PUBLIC_API_KEY` — prefixed `pkapi_cert_...` (sandbox)
+  - `SECRET_API_KEY` — prefixed `skapi_cert_...` (sandbox)
+- Docker (for multi-service setup), or a local runtime for your chosen language
 
-## Docker Support
+---
 
-All implementations include Docker support for easy deployment:
+## Quick Start
+
+### 1. Clone the repository
 
 ```bash
-# Run individual service
-docker build -t reporting-service-php ./php
-docker run -p 8000:8000 --env-file .env reporting-service-php
-
-# Run all services with docker-compose
-docker-compose up
-
-# Services will be available at:
-# - Node.js: http://localhost:8001
-# - Python: http://localhost:8002
-# - PHP: http://localhost:8003
-# - Java: http://localhost:8004
-# - Go: http://localhost:8005
-# - .NET: http://localhost:8006
+git clone https://github.com/globalpayments-samples/reporting-service.git
+cd reporting-service
 ```
 
-## Security Features
+### 2. Choose a language and configure credentials
 
-All implementations include:
-- HTML escaping to prevent XSS attacks
-- Secure environment variable management
-- Non-root users in Docker containers
-- HTTPS support for production deployments
-- Input validation and sanitization
+```bash
+cd nodejs    # or php, dotnet, java, python, go
+cp .env.sample .env
+```
 
-## Documentation
+Edit `.env`:
 
-Each implementation includes:
-- Built-in API documentation page accessible from the UI
-- Language-specific README with setup instructions
-- Code examples and usage guidelines
-- API endpoint reference with request/response formats
+```env
+PUBLIC_API_KEY=pkapi_cert_your_key_here
+SECRET_API_KEY=skapi_cert_your_key_here
+```
+
+### 3. Install and run
+
+**PHP:**
+```bash
+composer install
+php -S localhost:8003
+```
+
+**Node.js:**
+```bash
+npm install
+npm start
+```
+
+**.NET:**
+```bash
+dotnet restore
+dotnet run
+```
+
+**Java:**
+```bash
+mvn clean package
+mvn cargo:run
+```
+
+**Python:**
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+**Go:**
+```bash
+go mod download
+go run main.go
+```
+
+### 4. Explore the UI
+
+Open the app (e.g. http://localhost:8001) and navigate the three tabs:
+
+- **Payment Form** — process a test transaction
+- **Reporting Documentation** — browse all available report endpoints
+- **Transaction Report** — search, filter, and export transaction history
+
+---
+
+## Docker Setup
+
+Run all six language implementations simultaneously:
+
+```bash
+cp .env.sample .env
+# Edit .env with your credentials, then:
+docker-compose up
+```
+
+Individual services:
+
+```bash
+docker-compose up nodejs    # http://localhost:8001
+docker-compose up python    # http://localhost:8002
+docker-compose up php       # http://localhost:8003
+docker-compose up java      # http://localhost:8004
+docker-compose up go        # http://localhost:8005
+docker-compose up dotnet    # http://localhost:8006
+```
+
+Run integration tests:
+
+```bash
+docker-compose --profile testing up
+```
+
+---
+
+## API Endpoints
+
+### `GET /config`
+
+Returns the public API key for globalpayments.js initialization on the payment form.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "publicApiKey": "pkapi_cert_..."
+  }
+}
+```
+
+---
+
+### `POST /process-payment`
+
+Processes a credit card charge using a tokenized payment reference from the hosted fields form.
+
+**Request body:**
+```json
+{
+  "payment_token": "supt_...",
+  "amount": "19.99",
+  "billing_zip": "30303"
+}
+```
+
+**Success (`200`):**
+```json
+{
+  "success": true,
+  "data": {
+    "transactionId": "1234567890",
+    "responseCode": "00",
+    "responseMessage": "Approved"
+  }
+}
+```
+
+---
+
+### `GET /api/reports`
+
+All reporting actions use a single endpoint with an `action` query parameter.
+
+#### `action=search` — Search transactions
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `start_date` | No | `YYYY-MM-DD` |
+| `end_date` | No | `YYYY-MM-DD` |
+| `transaction_id` | No | Exact transaction ID |
+| `status` | No | Transaction status filter |
+| `payment_type` | No | Payment method type |
+| `amount_min` | No | Minimum amount |
+| `amount_max` | No | Maximum amount |
+| `card_last_four` | No | Last 4 digits of card |
+| `page` | No | Page number (default: `1`) |
+| `page_size` | No | Results per page (max: `100`) |
+
+**Example:** `GET /api/reports?action=search&start_date=2025-01-01&end_date=2025-01-31`
+
+---
+
+#### `action=detail` — Get transaction details
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `transaction_id` | Yes | Transaction ID to look up |
+
+**Example:** `GET /api/reports?action=detail&transaction_id=1234567890`
+
+---
+
+#### `action=settlement` — Settlement report
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `start_date` | No | `YYYY-MM-DD` |
+| `end_date` | No | `YYYY-MM-DD` |
+| `page` | No | Page number |
+| `page_size` | No | Results per page (max: `100`) |
+
+---
+
+#### `action=export` — Export transaction data
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `format` | No | `json` (default), `csv`, or `xml` |
+| `start_date` | No | `YYYY-MM-DD` |
+| `end_date` | No | `YYYY-MM-DD` |
+| `transaction_id` | No | Filter by ID |
+| `status` | No | Filter by status |
+
+**Example:** `GET /api/reports?action=export&format=csv&start_date=2025-01-01`
+
+---
+
+#### `action=summary` — Transaction summary statistics
+
+Returns aggregate counts and totals across a time range.
+
+---
+
+#### `action=declines` — Declined transaction analysis
+
+Returns declined transactions with decline reason codes.
+
+---
+
+## Project Structure
+
+```
+reporting-service/
+├── index.html              # Shared frontend (three-tab UI)
+├── docker-compose.yml      # Multi-service Docker config
+├── Dockerfile.tests
+├── LICENSE
+├── README.md
+│
+├── php/                    # Port 8003
+│   ├── config.php          # GET /config
+│   ├── process-payment.php # POST /process-payment
+│   ├── reports.php         # GET /api/reports
+│   ├── reporting-service.php
+│   └── documentation.php
+│
+├── nodejs/                 # Port 8001
+│   ├── server.js           # /config, /process-payment
+│   ├── reports.js          # /api/reports router
+│   └── reporting-service.js
+│
+├── dotnet/                 # Port 8006
+│   └── Program.cs
+│
+├── java/                   # Port 8004
+│   └── src/
+│
+├── python/                 # Port 8002
+│   └── app.py
+│
+└── go/                     # Port 8005
+    └── main.go
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PUBLIC_API_KEY` | Portico public key for hosted fields | `pkapi_cert_jKc1Ft...` |
+| `SECRET_API_KEY` | Portico secret key for server-side SDK | `skapi_cert_MTyM...` |
+
+---
+
+## Test Cards (Sandbox)
+
+| Brand | Card Number | CVV | Expiry |
+|-------|-------------|-----|--------|
+| Visa | 4012002000060016 | 123 | Any future |
+| Mastercard | 5473500000000014 | 123 | Any future |
+| Discover | 6011000990156527 | 123 | Any future |
+| Amex | 372700699251018 | 1234 | Any future |
+
+---
+
+## Troubleshooting
+
+**Reports return empty results**
+Sandbox accounts may have limited transaction history. Process a test payment in Tab 1 first, then search for it in Tab 3.
+
+**`401 Unauthorized` from Portico**
+Verify `PUBLIC_API_KEY` and `SECRET_API_KEY` in `.env` match the `pkapi_cert_` / `skapi_cert_` format for sandbox.
+
+**`Invalid start_date format`**
+Dates must be `YYYY-MM-DD`. Example: `2025-01-15`.
+
+**Port conflict**
+Check which service is running (`lsof -i :8001`) and update the port in `docker-compose.yml`.
+
+## Community
+
+- 🌐 **Developer Portal** — [developer.globalpayments.com](https://developer.globalpayments.com)
+- 💬 **Discord** — [Join the community](https://discord.gg/myER9G9qkc)
+- 📋 **GitHub Discussions** — [github.com/orgs/globalpayments/discussions](https://github.com/orgs/globalpayments/discussions)
+- 📧 **Newsletter** — [Subscribe](https://www.globalpayments.com/en-gb/modals/newsletter)
+- 💼 **LinkedIn** — [Global Payments for Developers](https://www.linkedin.com/showcase/global-payments-for-developers/posts/?feedView=all)
+
+Have a question or found a bug? [Open an issue](https://github.com/globalpayments-samples/reporting-service/issues) or reach out at [communityexperience@globalpay.com](mailto:communityexperience@globalpay.com).
+
+---
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

@@ -4,8 +4,8 @@ A comprehensive .NET implementation for Global Payments payment processing and t
 
 ## Requirements
 
-- .NET 6.0 or later
-- Global Payments account and API credentials
+- .NET 8.0 SDK
+- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
 
 ## Quick Start
 
@@ -13,15 +13,9 @@ A comprehensive .NET implementation for Global Payments payment processing and t
 
 Copy `.env.sample` to `.env` and add your credentials:
 
-```properties
-# Payment Processing (Portico API)
-PUBLIC_API_KEY=pkapi_cert_your_public_key
-SECRET_API_KEY=skapi_cert_your_secret_key
-
-# Transaction Reporting (GP-API)
-GP_API_APP_ID=your_app_id_here
-GP_API_APP_KEY=your_app_key_here
-GP_API_ENVIRONMENT=TEST  # or PRODUCTION
+```env
+PUBLIC_API_KEY=pkapi_cert_your_key_here
+SECRET_API_KEY=skapi_cert_your_key_here
 ```
 
 ### 2. Install Dependencies
@@ -112,7 +106,7 @@ dotnet/
 ### Processing a Payment
 
 1. Open http://localhost:8000/index.html in your browser
-2. Use test card: `4263970000005262`
+2. Use test card: `4012002000060016`
 3. Enter any future expiration date
 4. Enter CVV: `123`
 5. Enter billing ZIP code
@@ -140,9 +134,9 @@ curl "http://localhost:8000/api/reports/export?format=csv&start_date=2025-09-01"
 
 | Card Type | Number | CVV | Expiry |
 |-----------|--------|-----|--------|
-| Visa | 4263970000005262 | 123 | Any future date |
-| Mastercard | 5425230000004415 | 123 | Any future date |
-| Amex | 374101000000608 | 1234 | Any future date |
+| Visa | 4012002000060016 | 123 | Any future date |
+| Mastercard | 5473500000000014 | 123 | Any future date |
+| Amex | 372700699251018 | 1234 | Any future date |
 
 ### Testing Workflow
 
@@ -160,12 +154,8 @@ curl "http://localhost:8000/api/reports/export?format=csv&start_date=2025-09-01"
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PUBLIC_API_KEY` | Yes | Portico public API key for payment processing |
-| `SECRET_API_KEY` | Yes | Portico secret API key for payment processing |
-| `GP_API_APP_ID` | Yes | GP-API App ID for reporting |
-| `GP_API_APP_KEY` | Yes | GP-API App Key for reporting |
-| `GP_API_ENVIRONMENT` | No | TEST or PRODUCTION (default: TEST) |
-| `PORT` | No | Server port (default: 8000) |
+| `PUBLIC_API_KEY` | Yes | Portico public key for payment processing |
+| `SECRET_API_KEY` | Yes | Portico secret key for payment processing |
 
 ## Troubleshooting
 
@@ -184,22 +174,18 @@ dotnet run --urls "http://localhost:8080"
 - Verify `PUBLIC_API_KEY` and `SECRET_API_KEY` are correct
 - Ensure using test credentials for test environment
 
-**Reporting not working?**
-- Verify `GP_API_APP_ID` and `GP_API_APP_KEY` are correct
-- These are different from payment processing credentials
-
 **Build fails?**
-- Ensure .NET 6.0+ SDK is installed
+- Ensure .NET 8.0 SDK is installed: `dotnet --version`
 - Try `dotnet clean` then `dotnet restore`
 
 ## Documentation
 
 - **Payment Processing**: See API Endpoints section above
 - **Transaction Reporting**: See [REPORTING_README.md](REPORTING_README.md)
-- **Global Payments Docs**: https://developer.globalpay.com
+- **Global Payments Docs**: https://developer.globalpayments.com
 
 ## Support
 
 For issues or questions:
-- Global Payments Developer Portal: https://developer.globalpay.com
+- Global Payments Developer Portal: https://developer.globalpayments.com
 - SDK Documentation: https://github.com/globalpayments/dotnet-sdk
