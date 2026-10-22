@@ -80,8 +80,7 @@ SECRET_API_KEY=skapi_cert_your_key_here
 
 **PHP:**
 ```bash
-composer install
-php -S localhost:8003
+cd php && ./run.sh
 ```
 
 **Node.js:**

@@ -6,7 +6,7 @@ PHP implementation of the Global Payments transaction reporting service using th
 
 ## Requirements
 
-- PHP 8.0+
+- PHP 8.2.35+, 8.3.36+, 8.4.27+, 8.5.12+
 - Composer
 - Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
 
@@ -49,7 +49,7 @@ Install and run:
 
 ```bash
 composer install
-php -S localhost:8003
+PORT=8003 ./run.sh
 ```
 
 Open: http://localhost:8003
@@ -215,4 +215,4 @@ Process a payment in Tab 1 first to generate transaction data, then search in Ta
 Confirm `SECRET_API_KEY` is `skapi_cert_...` format for sandbox.
 
 **Port 8003 in use**
-Change the port: `php -S localhost:8004`
+Set `PORT=8004` before `./run.sh`
