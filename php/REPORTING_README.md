@@ -10,7 +10,7 @@ GP_API_APP_ID=your_app_id_here
 GP_API_APP_KEY=your_app_key_here
 ```
 
-Start server: `php -S localhost:8000`
+Start server: `./run.sh`
 
 ## Endpoints
 
