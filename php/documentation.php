@@ -161,7 +161,7 @@
                 <p>Add the following to your <code>.env</code> file:</p>
                 <pre><code>GP_API_APP_ID=your_app_id_here
 GP_API_APP_KEY=your_app_key_here</code></pre>
-                <p>Start server: <code>php -S localhost:8000</code></p>
+                <p>Start server: <code>./run.sh</code></p>
             </div>
 
             <div class="doc-section">
