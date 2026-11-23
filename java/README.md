@@ -4,7 +4,7 @@ A comprehensive Java implementation for Global Payments payment processing and t
 
 ## Requirements
 
-- Java 17+
+- Java 21+
 - Maven 3.8+
 - Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
 
@@ -177,7 +177,7 @@ mvn cargo:run -Dcargo.servlet.port=8080
 - Ensure using test credentials for test environment
 
 **Build fails?**
-Verify Java 17+: `java -version`. Verify Maven 3.8+: `mvn -version`.
+Verify Java 21+: `java -version`. Verify Maven 3.8+: `mvn -version`.
 
 ## Documentation
 

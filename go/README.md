@@ -4,7 +4,7 @@ A comprehensive Go implementation for Global Payments payment processing and tra
 
 ## Requirements
 
-- Go 1.21 or later
+- Go 1.26 or later
 - Global Payments account and API credentials
 
 ## Quick Start
@@ -171,7 +171,7 @@ curl "http://localhost:8888/reports/export?format=csv&start_date=2025-09-01" -o 
 
 **Module errors?**
 - Run `go mod tidy` to clean up dependencies
-- Ensure Go 1.21+ is installed
+- Ensure Go 1.26+ is installed
 
 ## Documentation
 

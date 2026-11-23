@@ -30,7 +30,7 @@
 - [`dotnet/Services/ReportingService.cs`](dotnet/Services/ReportingService.cs) — `GlobalPaymentsReportingService`; all methods async (`SearchTransactionsAsync()`, `GetSettlementReportAsync()`, `GetDisputeReportAsync()`, `GetDepositReportAsync()`, `ExportTransactionsAsync()`); `GetBatchReportAsync()` is a stub returning empty data
 - [`dotnet/Controllers/ReportsController.cs`](dotnet/Controllers/ReportsController.cs) — `ReportsController`; routes `GET/POST /api/reports/search`, `/api/reports/settlement`, `/api/reports/disputes`, `/api/reports/deposits`, `/api/reports/detail/{transactionId}`, `/api/reports/export`, `/api/reports/batches`, `/api/reports/declines`, `/api/reports/date-range`, `/api/reports/summary`, `/api/reports/config`
 - [`dotnet/Program.cs`](dotnet/Program.cs) — `ConfigureGlobalPaymentsSDK()`; registers `GlobalPaymentsReportingService` singleton; `GET /config` minimal API endpoint
-- [`dotnet/dotnet.csproj`](dotnet/dotnet.csproj) — `GlobalPayments.Api` 9.0.16, net9.0
+- [`dotnet/dotnet.csproj`](dotnet/dotnet.csproj) — `GlobalPayments.Api` 9.0.16, net10.0
 
 ### Java (Jakarta EE servlet + Global Payments SDK)
 - [`java/src/main/java/com/globalpayments/example/ReportingService.java`](java/src/main/java/com/globalpayments/example/ReportingService.java) — `configureGpApiSdk()`; full reporting methods including `searchTransactions()`, `getSettlementReport()`, `getDisputeReport()`, `getDepositReport()`; `getBatchReport()` returns empty placeholder data

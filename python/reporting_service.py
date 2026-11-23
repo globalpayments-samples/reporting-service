@@ -7,6 +7,7 @@ Global Payments transactions including search, filtering, and data export.
 Python version 3.7 or higher
 """
 
+import logging
 import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -23,6 +24,8 @@ from globalpayments.api.entities.enums import (
 )
 from globalpayments.api.entities.exceptions import ApiException
 
+logger = logging.getLogger(__name__)
+
 
 class GlobalPaymentsReportingService:
     """
@@ -38,8 +41,12 @@ class GlobalPaymentsReportingService:
         try:
             self._configure_gp_api_sdk()
             self.is_configured = True
-        except Exception as e:
-            raise ValueError(f'Failed to configure SDK: {str(e)}')
+        except (ValueError, ApiException) as e:
+            # Missing settings and SDK errors are reported to the caller as they are
+            raise ValueError(f'Failed to configure SDK: {e}')
+        except Exception:
+            logger.exception('Failed to configure the SDK')
+            raise ValueError('Failed to configure SDK')
 
     def _configure_gp_api_sdk(self) -> None:
         """Configure the SDK for GP-API with reporting capabilities"""
@@ -510,8 +517,11 @@ class GlobalPaymentsReportingService:
                 })
                 if transaction_result['success']:
                     report['data']['transactions'] = transaction_result['data']
-            except Exception as e:
+            except ApiException as e:
                 report['data']['transactions'] = {'error': f'Transactions not available: {str(e)}'}
+            except Exception:
+                logger.exception('Transactions not available for the date range report')
+                report['data']['transactions'] = {'error': 'Transactions not available'}
 
             # Get settlements for the period
             try:
@@ -522,8 +532,11 @@ class GlobalPaymentsReportingService:
                 })
                 if settlement_result['success']:
                     report['data']['settlements'] = settlement_result['data']
-            except Exception as e:
+            except ApiException as e:
                 report['data']['settlements'] = {'error': f'Settlements not available: {str(e)}'}
+            except Exception:
+                logger.exception('Settlements not available for the date range report')
+                report['data']['settlements'] = {'error': 'Settlements not available'}
 
             # Get disputes for the period
             try:
@@ -534,8 +547,11 @@ class GlobalPaymentsReportingService:
                 })
                 if dispute_result['success']:
                     report['data']['disputes'] = dispute_result['data']
-            except Exception as e:
+            except ApiException as e:
                 report['data']['disputes'] = {'error': f'Disputes not available: {str(e)}'}
+            except Exception:
+                logger.exception('Disputes not available for the date range report')
+                report['data']['disputes'] = {'error': 'Disputes not available'}
 
             # Get deposits for the period
             try:
@@ -546,18 +562,28 @@ class GlobalPaymentsReportingService:
                 })
                 if deposit_result['success']:
                     report['data']['deposits'] = deposit_result['data']
-            except Exception as e:
+            except ApiException as e:
                 report['data']['deposits'] = {'error': f'Deposits not available: {str(e)}'}
+            except Exception:
+                logger.exception('Deposits not available for the date range report')
+                report['data']['deposits'] = {'error': 'Deposits not available'}
 
             # Generate comprehensive summary
             report['data']['summary'] = self._generate_comprehensive_summary(report['data'])
 
             return report
 
-        except Exception as e:
+        except ApiException as e:
             return {
                 'success': False,
                 'error': f'Failed to generate date range report: {str(e)}',
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        except Exception:
+            logger.exception('Failed to generate date range report')
+            return {
+                'success': False,
+                'error': 'Failed to generate date range report',
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
@@ -636,10 +662,17 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
-        except Exception as e:
+        except ApiException as e:
             return {
                 'success': False,
                 'error': f'Failed to generate summary statistics: {str(e)}',
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        except Exception:
+            logger.exception('Failed to generate summary statistics')
+            return {
+                'success': False,
+                'error': 'Failed to generate summary statistics',
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
@@ -1024,10 +1057,11 @@ def get_sdk_config_status() -> Dict[str, Any]:
             'environment': 'TEST' if is_configured else 'Not configured',
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-    except Exception as e:
+    except Exception:
+        logger.exception('Failed to read the SDK configuration status')
         return {
             'configured': False,
-            'error': str(e),
+            'error': 'Failed to read the SDK configuration status',
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 

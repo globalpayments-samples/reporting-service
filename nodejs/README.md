@@ -4,7 +4,7 @@ A comprehensive Node.js implementation for Global Payments payment processing an
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 24+
 - npm
 - Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
 
@@ -174,7 +174,7 @@ PORT=8080 npm start
 - Ensure using test credentials for test environment
 
 **npm install fails?**
-- Ensure Node.js 18+ is installed: `node --version`
+- Ensure Node.js 24+ is installed: `node --version`
 - Remove `node_modules` and retry: `rm -rf node_modules && npm install`
 
 ## Documentation

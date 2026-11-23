@@ -8,7 +8,7 @@ reports, and data export capabilities.
 Python version 3.7 or higher
 """
 
-from flask import Blueprint, request, jsonify, Response
+from flask import Blueprint, request, jsonify, Response, current_app
 from datetime import datetime
 from typing import Dict, Any
 
@@ -550,8 +550,11 @@ def reports_handler():
             raise ValueError(f"Invalid action: {action}")
 
     except ValueError as e:
+        # Validation messages are written for the caller
         return handle_error(str(e), 400, 'VALIDATION_ERROR')
     except ApiException as e:
         return handle_error(str(e), 400, 'API_ERROR')
-    except Exception as e:
-        return handle_error(f'An unexpected error occurred: {str(e)}', 500, 'INTERNAL_ERROR')
+    except Exception:
+        # Log unexpected errors on the server and return a generic message
+        current_app.logger.exception('Unexpected error in the reporting request')
+        return handle_error('An unexpected error occurred', 500, 'INTERNAL_ERROR')
