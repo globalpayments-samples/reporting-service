@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using CardPaymentSample.Services;
 using GlobalPayments.Api.Entities;
+using System.Globalization;
 using System.Text;
+using System.Text.Json;
 
 namespace CardPaymentSample.Controllers;
 
@@ -11,11 +13,18 @@ namespace CardPaymentSample.Controllers;
 /// This controller provides RESTful API endpoints for accessing Global Payments
 /// reporting functionality including transaction search, details, settlement
 /// reports, and data export capabilities.
+///
+/// Every report answers on /api/reports?action={action} (the same path as the
+/// Node.js, Python and Go servers) and on /api/reports/{action}, for example
+/// /api/reports/search or /api/reports/date-range.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/reports")]
 public class ReportsController : ControllerBase
 {
+    private static readonly string[] SearchFilters =
+        { "start_date", "end_date", "transaction_id", "payment_type", "status", "amount_min", "amount_max", "card_last_four" };
+
     private readonly GlobalPaymentsReportingService _reportingService;
     private readonly ILogger<ReportsController>? _logger;
 
@@ -29,707 +38,418 @@ public class ReportsController : ControllerBase
     }
 
     /// <summary>
-    /// Root endpoint - API documentation
-    /// GET /api/reports
+    /// GET/POST /api/reports?action=search (no action answers the API documentation)
     /// </summary>
     [HttpGet]
-    public IActionResult GetApiInfo()
-    {
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                name = "Global Payments Reporting API",
-                version = "1.0.0",
-                description = "RESTful API for Global Payments transaction reporting and analytics",
-                endpoints = new
-                {
-                    search = new
-                    {
-                        url = "/api/reports/search",
-                        method = "GET/POST",
-                        description = "Search transactions with filters and pagination",
-                        parameters = new
-                        {
-                            page = "Page number (default: 1)",
-                            page_size = "Results per page (default: 10, max: 100)",
-                            start_date = "Start date (YYYY-MM-DD)",
-                            end_date = "End date (YYYY-MM-DD)",
-                            transaction_id = "Specific transaction ID",
-                            payment_type = "Payment type (sale, refund, authorize, capture)",
-                            status = "Transaction status",
-                            amount_min = "Minimum amount",
-                            amount_max = "Maximum amount",
-                            card_last_four = "Last 4 digits of card"
-                        }
-                    },
-                    detail = new
-                    {
-                        url = "/api/reports/detail/{transactionId}",
-                        method = "GET",
-                        description = "Get detailed transaction information",
-                        parameters = new
-                        {
-                            transactionId = "Transaction ID (required)"
-                        }
-                    },
-                    settlement = new
-                    {
-                        url = "/api/reports/settlement",
-                        method = "GET/POST",
-                        description = "Get settlement report",
-                        parameters = new
-                        {
-                            page = "Page number (default: 1)",
-                            page_size = "Results per page (default: 50, max: 100)",
-                            start_date = "Start date (YYYY-MM-DD)",
-                            end_date = "End date (YYYY-MM-DD)"
-                        }
-                    },
-                    export = new
-                    {
-                        url = "/api/reports/export",
-                        method = "GET/POST",
-                        description = "Export transaction data",
-                        parameters = new
-                        {
-                            format = "Export format (json, csv, or xml)",
-                            filters = "Same filters as search endpoint"
-                        }
-                    },
-                    summary = new
-                    {
-                        url = "/api/reports/summary",
-                        method = "GET/POST",
-                        description = "Get summary statistics",
-                        parameters = new
-                        {
-                            start_date = "Start date (YYYY-MM-DD)",
-                            end_date = "End date (YYYY-MM-DD)"
-                        }
-                    },
-                    config = new
-                    {
-                        url = "/api/reports/config",
-                        method = "GET",
-                        description = "Get API configuration and status"
-                    }
-                }
-            },
-            timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-        });
-    }
+    [HttpPost]
+    public Task<IActionResult> Index() => Handle(null, new Dictionary<string, string>());
 
     /// <summary>
-    /// Search transactions with filters and pagination
-    /// GET/POST /api/reports/search
+    /// GET/POST /api/reports/search, /api/reports/date-range and the other actions
     /// </summary>
-    [HttpGet("search")]
-    [HttpPost("search")]
-    public async Task<IActionResult> SearchTransactions()
-    {
-        try
-        {
-            var filters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.SearchTransactionsAsync(filters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error during transaction search");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error during transaction search");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
+    [HttpGet("{name}")]
+    [HttpPost("{name}")]
+    public Task<IActionResult> ByPath(string name) => Handle(name.Replace("-", "_"), new Dictionary<string, string>());
 
     /// <summary>
-    /// Get transaction details
     /// GET /api/reports/detail/{transactionId}
     /// </summary>
     [HttpGet("detail/{transactionId}")]
-    public async Task<IActionResult> GetTransactionDetail(string transactionId)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(transactionId))
-            {
-                return BadRequest(CreateErrorResponse("Missing required parameter: transaction_id", "VALIDATION_ERROR"));
-            }
-
-            var result = await _reportingService.GetTransactionDetailsAsync(transactionId);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error retrieving transaction detail");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error retrieving transaction detail");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
+    public Task<IActionResult> TransactionDetail(string transactionId) =>
+        Handle("detail", new Dictionary<string, string> { ["transaction_id"] = transactionId });
 
     /// <summary>
-    /// Get settlement report
-    /// GET/POST /api/reports/settlement
-    /// </summary>
-    [HttpGet("settlement")]
-    [HttpPost("settlement")]
-    public async Task<IActionResult> GetSettlementReport()
-    {
-        try
-        {
-            var parameters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (parameters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (parameters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.GetSettlementReportAsync(parameters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating settlement report");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating settlement report");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
-
-    /// <summary>
-    /// Export transaction data
-    /// GET/POST /api/reports/export
-    /// </summary>
-    [HttpGet("export")]
-    [HttpPost("export")]
-    public async Task<IActionResult> ExportTransactions()
-    {
-        try
-        {
-            var filters = GetRequestParameters();
-            var format = filters.GetValueOrDefault("format", "json").ToLowerInvariant();
-
-            if (!new[] { "json", "csv", "xml" }.Contains(format))
-            {
-                return BadRequest(CreateErrorResponse("Invalid format. Supported formats: json, csv, xml", "VALIDATION_ERROR"));
-            }
-
-            // Validate date formats if provided
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.ExportTransactionsAsync(filters, format);
-            var resultObj = (dynamic)result;
-
-            if (format == "csv")
-            {
-                var filename = resultObj.filename ?? "transactions.csv";
-                return File(Encoding.UTF8.GetBytes(resultObj.data), "text/csv", filename);
-            }
-            else if (format == "xml")
-            {
-                var filename = resultObj.filename ?? "transactions.xml";
-                return File(Encoding.UTF8.GetBytes(resultObj.data), "application/xml", filename);
-            }
-
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error during export");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error during export");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
-
-    /// <summary>
-    /// Get summary statistics
-    /// GET/POST /api/reports/summary
-    /// </summary>
-    [HttpGet("summary")]
-    [HttpPost("summary")]
-    public async Task<IActionResult> GetSummary()
-    {
-        try
-        {
-            var parameters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (parameters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (parameters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.GetSummaryStatsAsync(parameters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating summary");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating summary");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
-
-    /// <summary>
-    /// Get dispute report
-    /// GET/POST /api/reports/disputes
-    /// </summary>
-    [HttpGet("disputes")]
-    [HttpPost("disputes")]
-    public async Task<IActionResult> GetDisputeReport()
-    {
-        try
-        {
-            var filters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.GetDisputeReportAsync(filters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating dispute report");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating dispute report");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
-
-    /// <summary>
-    /// Get dispute details
     /// GET /api/reports/disputes/{disputeId}
     /// </summary>
     [HttpGet("disputes/{disputeId}")]
-    public async Task<IActionResult> GetDisputeDetail(string disputeId)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(disputeId))
-            {
-                return BadRequest(CreateErrorResponse("Missing required parameter: dispute_id", "VALIDATION_ERROR"));
-            }
-
-            var result = await _reportingService.GetDisputeDetailsAsync(disputeId);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error retrieving dispute detail");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error retrieving dispute detail");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
+    public Task<IActionResult> DisputeDetail(string disputeId) =>
+        Handle("dispute_detail", new Dictionary<string, string> { ["dispute_id"] = disputeId });
 
     /// <summary>
-    /// Get deposit report
-    /// GET/POST /api/reports/deposits
-    /// </summary>
-    [HttpGet("deposits")]
-    [HttpPost("deposits")]
-    public async Task<IActionResult> GetDepositReport()
-    {
-        try
-        {
-            var filters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.GetDepositReportAsync(filters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating deposit report");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating deposit report");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
-
-    /// <summary>
-    /// Get deposit details
     /// GET /api/reports/deposits/{depositId}
     /// </summary>
     [HttpGet("deposits/{depositId}")]
-    public async Task<IActionResult> GetDepositDetail(string depositId)
+    public Task<IActionResult> DepositDetail(string depositId) =>
+        Handle("deposit_detail", new Dictionary<string, string> { ["deposit_id"] = depositId });
+
+    private async Task<IActionResult> Handle(string? pathAction, Dictionary<string, string> routeParams)
     {
+        var parameters = await GetRequestParams();
+        foreach (var (key, value) in routeParams)
+        {
+            parameters[key] = value;
+        }
+        var action = pathAction ?? parameters.GetValueOrDefault("action", "");
+
         try
         {
-            if (string.IsNullOrWhiteSpace(depositId))
+            if (action == "")
             {
-                return BadRequest(CreateErrorResponse("Missing required parameter: deposit_id", "VALIDATION_ERROR"));
+                return Json(ApiDocumentation(), 200);
+            }
+            if (action == "config")
+            {
+                return Json(ConfigStatus(), 200);
             }
 
-            var result = await _reportingService.GetDepositDetailsAsync(depositId);
-            return Ok(result);
+            // Check the request before the credentials
+            var run = PrepareAction(action, parameters);
+            var result = await run();
+
+            if (action == "export" && result.GetValueOrDefault("format") is string format && (format == "csv" || format == "xml"))
+            {
+                Response.Headers.ContentDisposition = $"attachment; filename=\"{result["filename"]}\"";
+                return new ContentResult
+                {
+                    Content = (string)result["data"]!,
+                    ContentType = format == "csv" ? "text/csv" : "application/xml",
+                    StatusCode = 200
+                };
+            }
+
+            return Json(result, 200);
+        }
+        catch (ArgumentException ex)
+        {
+            return Error(ex.Message, 400, "VALIDATION_ERROR");
         }
         catch (ApiException ex)
         {
-            _logger?.LogError(ex, "API error retrieving deposit detail");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
+            return Error(ex.Message, 400, "API_ERROR");
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "Unexpected error retrieving deposit detail");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
+            // Log unexpected errors on the server and return a generic message
+            _logger?.LogError(ex, "Unexpected error in the reporting request");
+            return Error("An unexpected error occurred", 500, "INTERNAL_ERROR");
         }
     }
 
     /// <summary>
-    /// Get batch report
-    /// GET/POST /api/reports/batches
+    /// Check the request for an action and return the call that runs it
     /// </summary>
-    [HttpGet("batches")]
-    [HttpPost("batches")]
-    public async Task<IActionResult> GetBatchReport()
+    private Func<Task<Dictionary<string, object?>>> PrepareAction(string action, Dictionary<string, string> parameters)
     {
-        try
+        switch (action)
         {
-            var filters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
+            case "search":
             {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
+                var filters = Pick(parameters, SearchFilters);
+                filters["page"] = Page(parameters);
+                filters["page_size"] = Limit(parameters, "page_size", 10, 100);
+                ValidateDates(filters);
+                return () => _reportingService.SearchTransactionsAsync(filters);
             }
+            case "detail":
+                ValidateRequiredParams(parameters, "transaction_id");
+                return () => _reportingService.GetTransactionDetailsAsync(parameters["transaction_id"]);
 
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
+            case "settlement":
             {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
+                var filters = Pick(parameters, "start_date", "end_date");
+                filters["page"] = Page(parameters);
+                filters["page_size"] = Limit(parameters, "page_size", 50, 100);
+                ValidateDates(filters);
+                return () => _reportingService.GetSettlementReportAsync(filters);
             }
+            case "export":
+            {
+                var filters = Pick(parameters, SearchFilters);
+                var format = parameters.GetValueOrDefault("format", "");
+                if (format == "")
+                {
+                    format = "json";
+                }
+                if (format != "json" && format != "csv" && format != "xml")
+                {
+                    throw new ArgumentException("Invalid format. Supported formats: json, csv, xml");
+                }
+                ValidateDates(filters);
+                return () => _reportingService.ExportTransactionsAsync(filters, format);
+            }
+            case "summary":
+            {
+                var filters = Pick(parameters, "start_date", "end_date");
+                ValidateDates(filters);
+                return () => _reportingService.GetSummaryStatsAsync(filters);
+            }
+            case "disputes":
+            {
+                var filters = Pick(parameters, "start_date", "end_date", "stage", "status");
+                filters["page"] = Page(parameters);
+                filters["page_size"] = Limit(parameters, "page_size", 10, 100);
+                ValidateDates(filters);
+                return () => _reportingService.GetDisputeReportAsync(filters);
+            }
+            case "dispute_detail":
+                ValidateRequiredParams(parameters, "dispute_id");
+                return () => _reportingService.GetDisputeDetailsAsync(parameters["dispute_id"]);
 
-            var result = await _reportingService.GetBatchReportAsync(filters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating batch report");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating batch report");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
+            case "deposits":
+            {
+                var filters = Pick(parameters, "start_date", "end_date", "deposit_id", "status");
+                filters["page"] = Page(parameters);
+                filters["page_size"] = Limit(parameters, "page_size", 10, 100);
+                ValidateDates(filters);
+                return () => _reportingService.GetDepositReportAsync(filters);
+            }
+            case "deposit_detail":
+                ValidateRequiredParams(parameters, "deposit_id");
+                return () => _reportingService.GetDepositDetailsAsync(parameters["deposit_id"]);
+
+            case "batches":
+            {
+                var filters = Pick(parameters, "start_date", "end_date");
+                ValidateDates(filters);
+                return () => _reportingService.GetBatchReportAsync(filters);
+            }
+            case "declines":
+            {
+                var filters = Pick(parameters, "start_date", "end_date", "payment_type", "amount_min", "amount_max", "card_last_four");
+                filters["page"] = Page(parameters);
+                filters["page_size"] = Limit(parameters, "page_size", 10, 100);
+                ValidateDates(filters);
+                return () => _reportingService.GetDeclinedTransactionsReportAsync(filters);
+            }
+            case "date_range":
+            {
+                var filters = Pick(parameters, "start_date", "end_date");
+                filters["transaction_limit"] = Limit(parameters, "transaction_limit", 100, 1000);
+                filters["settlement_limit"] = Limit(parameters, "settlement_limit", 50, 500);
+                filters["dispute_limit"] = Limit(parameters, "dispute_limit", 25, 100);
+                filters["deposit_limit"] = Limit(parameters, "deposit_limit", 25, 100);
+                ValidateDates(filters);
+                return () => _reportingService.GetDateRangeReportAsync(filters);
+            }
+            default:
+                throw new ArgumentException($"Invalid action: {action}");
         }
     }
 
-    /// <summary>
-    /// Get declined transactions report
-    /// GET/POST /api/reports/declines
-    /// </summary>
-    [HttpGet("declines")]
-    [HttpPost("declines")]
-    public async Task<IActionResult> GetDeclinedTransactions()
+    private static Dictionary<string, object?> ConfigStatus() => new()
     {
-        try
+        ["success"] = true,
+        ["data"] = new Dictionary<string, object?>
         {
-            var filters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
+            ["sdk_status"] = GlobalPaymentsReportingService.GetSdkConfigStatus(),
+            ["environment_validation"] = GlobalPaymentsReportingService.ValidateEnvironmentConfig(),
+            ["api_endpoints"] = new Dictionary<string, object?>
             {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
+                ["search"] = "/api/reports?action=search",
+                ["detail"] = "/api/reports?action=detail&transaction_id={id}",
+                ["settlement"] = "/api/reports?action=settlement",
+                ["disputes"] = "/api/reports?action=disputes",
+                ["dispute_detail"] = "/api/reports?action=dispute_detail&dispute_id={id}",
+                ["deposits"] = "/api/reports?action=deposits",
+                ["deposit_detail"] = "/api/reports?action=deposit_detail&deposit_id={id}",
+                ["batches"] = "/api/reports?action=batches",
+                ["declines"] = "/api/reports?action=declines",
+                ["date_range"] = "/api/reports?action=date_range",
+                ["export"] = "/api/reports?action=export&format={json|csv|xml}",
+                ["summary"] = "/api/reports?action=summary",
+                ["config"] = "/api/reports?action=config"
             }
+        },
+        ["timestamp"] = Now()
+    };
 
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.GetDeclinedTransactionsReportAsync(filters);
-            return Ok(result);
-        }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating declines report");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating declines report");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
-    }
-
-    /// <summary>
-    /// Get comprehensive date range report
-    /// GET/POST /api/reports/date-range
-    /// </summary>
-    [HttpGet("date-range")]
-    [HttpPost("date-range")]
-    public async Task<IActionResult> GetDateRangeReport()
+    private static Dictionary<string, object?> Endpoint(string url, string method, string description, Dictionary<string, string>? parameters = null)
     {
-        try
+        var endpoint = new Dictionary<string, object?> { ["url"] = url, ["method"] = method, ["description"] = description };
+        if (parameters != null)
         {
-            var parameters = GetRequestParameters();
-
-            // Validate date formats if provided
-            if (parameters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (!ValidateDateFormat(startDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid start_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            if (parameters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (!ValidateDateFormat(endDate))
-                {
-                    return BadRequest(CreateErrorResponse("Invalid end_date format. Use YYYY-MM-DD.", "VALIDATION_ERROR"));
-                }
-            }
-
-            var result = await _reportingService.GetDateRangeReportAsync(parameters);
-            return Ok(result);
+            endpoint["parameters"] = parameters;
         }
-        catch (ApiException ex)
-        {
-            _logger?.LogError(ex, "API error generating date range report");
-            return BadRequest(CreateErrorResponse(ex.Message, "API_ERROR"));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Unexpected error generating date range report");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
+        return endpoint;
     }
 
-    /// <summary>
-    /// Get API configuration and status
-    /// GET /api/reports/config
-    /// </summary>
-    [HttpGet("config")]
-    public IActionResult GetConfig()
+    private static Dictionary<string, string> Params(params string[] pairs)
     {
-        try
+        var result = new Dictionary<string, string>();
+        for (var i = 0; i < pairs.Length; i += 2)
         {
-            return Ok(new
-            {
-                success = true,
-                data = new
-                {
-                    sdk_status = new
-                    {
-                        configured = true,
-                        environment = System.Environment.GetEnvironmentVariable("GP_ENVIRONMENT") ?? "sandbox",
-                        sdk_version = "9.0.16"
-                    },
-                    environment_validation = new
-                    {
-                        has_app_id = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_APP_ID")),
-                        has_app_key = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_APP_KEY")),
-                        environment_configured = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_ENVIRONMENT"))
-                    },
-                    api_endpoints = new
-                    {
-                        search = "/api/reports/search",
-                        detail = "/api/reports/detail/{transactionId}",
-                        settlement = "/api/reports/settlement",
-                        disputes = "/api/reports/disputes",
-                        dispute_detail = "/api/reports/disputes/{disputeId}",
-                        deposits = "/api/reports/deposits",
-                        deposit_detail = "/api/reports/deposits/{depositId}",
-                        batches = "/api/reports/batches",
-                        declines = "/api/reports/declines",
-                        date_range = "/api/reports/date-range",
-                        export = "/api/reports/export?format={json|csv|xml}",
-                        summary = "/api/reports/summary",
-                        config = "/api/reports/config"
-                    }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            });
+            result[pairs[i]] = pairs[i + 1];
         }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Error retrieving config");
-            return StatusCode(500, CreateErrorResponse($"An unexpected error occurred: {ex.Message}", "INTERNAL_ERROR"));
-        }
+        return result;
     }
 
-    // Private helper methods
+    /// <summary>
+    /// The answer to /api/reports without an action
+    /// </summary>
+    private static Dictionary<string, object?> ApiDocumentation()
+    {
+        const string start = "Start date (YYYY-MM-DD)";
+        const string end = "End date (YYYY-MM-DD)";
+
+        return new Dictionary<string, object?>
+        {
+            ["success"] = true,
+            ["data"] = new Dictionary<string, object?>
+            {
+                ["name"] = "Global Payments Reporting API",
+                ["version"] = "1.0.0",
+                ["description"] = "RESTful API for Global Payments transaction reporting and analytics",
+                ["endpoints"] = new Dictionary<string, object?>
+                {
+                    ["search"] = Endpoint("/api/reports?action=search", "GET/POST", "Search transactions with filters and pagination",
+                        Params("page", "Page number (default: 1)", "page_size", "Results per page (default: 10, max: 100)",
+                            "start_date", start, "end_date", end, "transaction_id", "Specific transaction ID",
+                            "payment_type", "Payment type (sale, refund)", "status", "Transaction status",
+                            "amount_min", "Minimum amount", "amount_max", "Maximum amount", "card_last_four", "Last 4 digits of card")),
+                    ["detail"] = Endpoint("/api/reports?action=detail&transaction_id={id}", "GET", "Get detailed transaction information",
+                        Params("transaction_id", "Transaction ID (required)")),
+                    ["settlement"] = Endpoint("/api/reports?action=settlement", "GET/POST", "Get settlement report",
+                        Params("page", "Page number (default: 1)", "page_size", "Results per page (default: 50, max: 100)",
+                            "start_date", start, "end_date", end)),
+                    ["export"] = Endpoint("/api/reports?action=export&format={json|csv|xml}", "GET/POST", "Export transaction data",
+                        Params("format", "Export format (json, csv, or xml)", "...filters", "Same filters as search endpoint")),
+                    ["summary"] = Endpoint("/api/reports?action=summary", "GET/POST", "Get summary statistics",
+                        Params("start_date", start, "end_date", end)),
+                    ["disputes"] = Endpoint("/api/reports?action=disputes", "GET/POST", "Get dispute report",
+                        Params("page", "Page number (default: 1)", "page_size", "Results per page (default: 10, max: 100)",
+                            "start_date", start, "end_date", end, "stage", "Dispute stage", "status", "Dispute status")),
+                    ["deposits"] = Endpoint("/api/reports?action=deposits", "GET/POST", "Get deposit report",
+                        Params("page", "Page number (default: 1)", "page_size", "Results per page (default: 10, max: 100)",
+                            "start_date", start, "end_date", end, "deposit_id", "Specific deposit ID", "status", "Deposit status")),
+                    ["batches"] = Endpoint("/api/reports?action=batches", "GET/POST", "Get batch report",
+                        Params("start_date", start, "end_date", end)),
+                    ["declines"] = Endpoint("/api/reports?action=declines", "GET/POST", "Get declined transactions report",
+                        Params("page", "Page number (default: 1)", "page_size", "Results per page (default: 10, max: 100)",
+                            "start_date", start, "end_date", end, "payment_type", "Payment type",
+                            "amount_min", "Minimum amount", "amount_max", "Maximum amount", "card_last_four", "Last 4 digits of card")),
+                    ["date_range"] = Endpoint("/api/reports?action=date_range", "GET/POST", "Get comprehensive date range report",
+                        Params("start_date", start, "end_date", end,
+                            "transaction_limit", "Max transactions (default: 100, max: 1000)",
+                            "settlement_limit", "Max settlements (default: 50, max: 500)",
+                            "dispute_limit", "Max disputes (default: 25, max: 100)",
+                            "deposit_limit", "Max deposits (default: 25, max: 100)")),
+                    ["config"] = Endpoint("/api/reports?action=config", "GET", "Get API configuration and status")
+                }
+            },
+            ["timestamp"] = Now()
+        };
+    }
 
     /// <summary>
-    /// Get request parameters from both GET and POST requests
+    /// Get request parameters: the query string, merged with a JSON or form body
     /// </summary>
-    private Dictionary<string, string> GetRequestParameters()
+    private async Task<Dictionary<string, string>> GetRequestParams()
     {
         var parameters = new Dictionary<string, string>();
-
-        // Get query string parameters
-        foreach (var param in Request.Query)
+        foreach (var (key, value) in Request.Query)
         {
-            parameters[param.Key] = param.Value.ToString();
+            parameters[key] = value.ToString();
         }
 
-        // Get form/body parameters for POST requests
-        if (Request.Method == "POST" && Request.HasFormContentType)
+        if (!HttpMethods.IsPost(Request.Method))
         {
-            foreach (var param in Request.Form)
+            return parameters;
+        }
+
+        if (Request.HasFormContentType)
+        {
+            var form = await Request.ReadFormAsync();
+            foreach (var (key, value) in form)
             {
-                parameters[param.Key] = param.Value.ToString();
+                parameters[key] = value.ToString();
+            }
+        }
+        else if (Request.ContentType?.Contains("application/json") == true)
+        {
+            try
+            {
+                using var body = await JsonDocument.ParseAsync(Request.Body);
+                if (body.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var property in body.RootElement.EnumerateObject())
+                    {
+                        switch (property.Value.ValueKind)
+                        {
+                            case JsonValueKind.String:
+                                parameters[property.Name] = property.Value.GetString() ?? "";
+                                break;
+                            case JsonValueKind.Number:
+                                parameters[property.Name] = property.Value.GetRawText();
+                                break;
+                            case JsonValueKind.True:
+                            case JsonValueKind.False:
+                                parameters[property.Name] = property.Value.GetBoolean() ? "true" : "false";
+                                break;
+                        }
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Not a JSON object, use the query string only
             }
         }
 
         return parameters;
     }
 
-    /// <summary>
-    /// Validate date format (YYYY-MM-DD)
-    /// </summary>
-    private bool ValidateDateFormat(string date)
+    private static Dictionary<string, string> Pick(Dictionary<string, string> parameters, params string[] names)
     {
-        if (string.IsNullOrEmpty(date))
-            return true;
-
-        return DateTime.TryParseExact(date, "yyyy-MM-dd",
-            System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.None, out _);
-    }
-
-    /// <summary>
-    /// Create standardized error response
-    /// </summary>
-    private object CreateErrorResponse(string message, string errorCode)
-    {
-        return new
+        var result = new Dictionary<string, string>();
+        foreach (var name in names)
         {
-            success = false,
-            error = new
+            if (parameters.TryGetValue(name, out var value) && !string.IsNullOrEmpty(value))
             {
-                code = errorCode,
-                message = message,
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                result[name] = value;
             }
-        };
+        }
+        return result;
     }
+
+    /// <summary>
+    /// Read a positive number, falling back to the default and capping it
+    /// </summary>
+    private static string Limit(Dictionary<string, string> parameters, string name, int defaultValue, int max)
+    {
+        var value = parameters.TryGetValue(name, out var text) && int.TryParse(text, out var number) && number > 0 ? number : defaultValue;
+        return Math.Min(value, max).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string Page(Dictionary<string, string> parameters) => Limit(parameters, "page", 1, int.MaxValue);
+
+    private static void ValidateRequiredParams(Dictionary<string, string> parameters, params string[] required)
+    {
+        foreach (var name in required)
+        {
+            if (!parameters.TryGetValue(name, out var value) || string.IsNullOrEmpty(value))
+            {
+                throw new ArgumentException($"Missing required parameter: {name}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Validate YYYY-MM-DD start and end dates when they are given
+    /// </summary>
+    private static void ValidateDates(Dictionary<string, string> parameters)
+    {
+        foreach (var name in new[] { "start_date", "end_date" })
+        {
+            if (parameters.TryGetValue(name, out var value) && !string.IsNullOrEmpty(value)
+                && !DateTime.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+            {
+                throw new ArgumentException($"Invalid {name} format. Use YYYY-MM-DD.");
+            }
+        }
+    }
+
+    private static string Now() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static IActionResult Json(object data, int statusCode) => new JsonResult(data) { StatusCode = statusCode };
+
+    private static IActionResult Error(string message, int statusCode, string errorCode) => Json(new Dictionary<string, object?>
+    {
+        ["success"] = false,
+        ["error"] = new Dictionary<string, object?>
+        {
+            ["code"] = errorCode,
+            ["message"] = message,
+            ["timestamp"] = Now()
+        }
+    }, statusCode);
 }

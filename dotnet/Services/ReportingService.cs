@@ -1,8 +1,15 @@
 using GlobalPayments.Api;
+using GlobalPayments.Api.Builders;
 using GlobalPayments.Api.Entities;
-using GlobalPayments.Api.Entities.Enums;
+using GlobalPayments.Api.Entities.Reporting;
+using GlobalPayments.Api.Mapping;
 using GlobalPayments.Api.Services;
+using GlobalPayments.Api.Utils;
+using System.Globalization;
 using System.Text;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Xml;
 
 namespace CardPaymentSample.Services;
 
@@ -10,1077 +17,1065 @@ namespace CardPaymentSample.Services;
 /// Global Payments Reporting Service
 ///
 /// This service class provides comprehensive reporting functionality for
-/// Global Payments transactions including search, filtering, and data export.
+/// Global Payments transactions including search, filtering, and data export,
+/// read from GP API with the Global Payments .NET SDK.
 /// </summary>
 public class GlobalPaymentsReportingService
 {
-    private bool _isConfigured = false;
+    // The reports use their own SDK config, so the payment endpoint's default config is left as it is
+    private const string ConfigName = "reports";
+
+    private readonly object _configureLock = new();
+    private bool _isConfigured;
+
+    // GP API sandbox, https://apis.globalpay.com/ucp for live
+    private const string GpApiUrl = "https://apis.sandbox.globalpay.com/ucp";
+    private const string GpApiVersion = "2021-03-22";
+    // GP API answers gzip compressed
+    private static readonly HttpClient Http = new(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All })
+    {
+        Timeout = TimeSpan.FromSeconds(60)
+    };
+
+    private readonly object _tokenLock = new();
+    private string? _accessToken;
+    private DateTime _accessTokenExpires;
 
     /// <summary>
-    /// Constructor - Initialize the service
+    /// Configure the SDK for GP API on first use, so the docs and the config
+    /// check answer before the credentials are set
     /// </summary>
-    public GlobalPaymentsReportingService()
+    private void EnsureConfigured()
     {
-        try
+        lock (_configureLock)
         {
-            // SDK should already be configured in Program.cs
+            if (_isConfigured)
+            {
+                return;
+            }
+
+            foreach (var name in new[] { "GP_API_APP_ID", "GP_API_APP_KEY" })
+            {
+                if (string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable(name)))
+                {
+                    throw new ArgumentException($"Failed to configure SDK: Missing required environment variable: {name}");
+                }
+            }
+
+            ServicesContainer.ConfigureService(new GpApiConfig
+            {
+                AppId = System.Environment.GetEnvironmentVariable("GP_API_APP_ID"),
+                AppKey = System.Environment.GetEnvironmentVariable("GP_API_APP_KEY"),
+                Environment = GlobalPayments.Api.Entities.Environment.TEST, // Change to PRODUCTION for live
+                Channel = Channel.CardNotPresent
+            }, ConfigName);
             _isConfigured = true;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Failed to initialize reporting service: {ex.Message}", ex);
         }
     }
 
     /// <summary>
     /// Search transactions with filters and pagination
     /// </summary>
-    /// <param name="filters">Search filters and pagination parameters</param>
-    /// <returns>Transaction search results</returns>
-    public Task<object> SearchTransactionsAsync(Dictionary<string, string> filters)
+    public Task<Dictionary<string, object?>> SearchTransactionsAsync(Dictionary<string, string> filters)
     {
         EnsureConfigured();
 
+        var page = IntValue(filters, "page", 1);
+        var pageSize = IntValue(filters, "page_size", 10);
+
+        var query = new Dictionary<string, string?>
+        {
+            ["page"] = page.ToString(CultureInfo.InvariantCulture),
+            ["page_size"] = pageSize.ToString(CultureInfo.InvariantCulture),
+            ["from_time_created"] = filters.GetValueOrDefault("start_date"),
+            ["to_time_created"] = filters.GetValueOrDefault("end_date"),
+            ["id"] = filters.GetValueOrDefault("transaction_id"),
+            ["number_last4"] = filters.GetValueOrDefault("card_last_four")
+        };
+        if (Has(filters, "payment_type"))
+        {
+            query["type"] = filters["payment_type"].ToLowerInvariant() switch
+            {
+                "sale" => "SALE",
+                "refund" => "REFUND",
+                _ => throw new ArgumentException("Invalid payment_type. Supported values: sale, refund")
+            };
+        }
+
+        JsonDoc response;
         try
         {
-            var page = int.TryParse(filters.GetValueOrDefault("page", "1"), out var p) ? p : 1;
-            var pageSize = Math.Min(int.TryParse(filters.GetValueOrDefault("page_size", "10"), out var ps) ? ps : 10, 100);
-
-            var reportBuilder = ReportingService.FindTransactionsPaged(page, pageSize);
-
-            // Apply date range filters
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (DateTime.TryParse(startDate, out var start))
-                {
-                    reportBuilder.WithStartDate(start);
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (DateTime.TryParse(endDate, out var end))
-                {
-                    reportBuilder.WithEndDate(end);
-                }
-            }
-
-            // Apply transaction ID filter
-            if (filters.TryGetValue("transaction_id", out var transactionId) && !string.IsNullOrEmpty(transactionId))
-            {
-                reportBuilder.WithTransactionId(transactionId);
-            }
-
-            // Apply payment type filter
-            if (filters.TryGetValue("payment_type", out var paymentType) && !string.IsNullOrEmpty(paymentType))
-            {
-                var mappedType = MapPaymentType(paymentType);
-                if (mappedType.HasValue)
-                {
-                    reportBuilder.Where(SearchCriteria.PaymentType, mappedType.Value);
-                }
-            }
-
-            // Apply amount range filters
-            if (filters.TryGetValue("amount_min", out var amountMin) && decimal.TryParse(amountMin, out var minAmount))
-            {
-                reportBuilder.Where(DataServiceCriteria.Amount, minAmount);
-            }
-
-            if (filters.TryGetValue("amount_max", out var amountMax) && decimal.TryParse(amountMax, out var maxAmount))
-            {
-                reportBuilder.Where(DataServiceCriteria.Amount, maxAmount);
-            }
-
-            // Apply card number filter (last 4 digits)
-            if (filters.TryGetValue("card_last_four", out var cardLastFour) && !string.IsNullOrEmpty(cardLastFour))
-            {
-                reportBuilder.Where(SearchCriteria.CardNumberLastFour, cardLastFour);
-            }
-
-            // Execute the search
-            var response = reportBuilder.Execute();
-
-            var transactions = FormatTransactionList(response?.Results ?? new List<TransactionSummary>());
-
-            // Apply client-side filtering for status if needed
-            if (filters.TryGetValue("status", out var status) && !string.IsNullOrEmpty(status))
-            {
-                var statusFilter = status.ToUpperInvariant();
-                transactions = transactions.Where(t =>
-                    ((string?)((dynamic)t).status)?.ToUpperInvariant() == statusFilter
-                ).ToList();
-            }
-
-            return Task.FromResult<object>(new
-            {
-                success = true,
-                data = new
-                {
-                    transactions = transactions,
-                    pagination = new
-                    {
-                        page = page,
-                        page_size = pageSize,
-                        total_count = transactions.Count,
-                        original_total_count = response?.TotalRecordCount ?? 0
-                    }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            });
+            response = GpApiGet("/transactions", query);
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Transaction search failed: {ex.Message}", ex);
+            throw ReportError("Transaction search failed", ex);
         }
+
+        var transactions = (response.GetEnumerator("transactions") ?? Enumerable.Empty<JsonDoc>())
+            .Select(row => FormatTransaction(MapTransaction(row)))
+            .ToList();
+
+        // GP API only filters on an exact amount, so the range is applied here
+        if (TryDouble(filters, "amount_min", out var min))
+        {
+            transactions = transactions.Where(t => (double)t["amount"]! >= min).ToList();
+        }
+        if (TryDouble(filters, "amount_max", out var max))
+        {
+            transactions = transactions.Where(t => (double)t["amount"]! <= max).ToList();
+        }
+
+        // Status is not a search filter in this sample, it is applied to the page
+        if (Has(filters, "status"))
+        {
+            var status = filters["status"].ToUpperInvariant();
+            transactions = transactions.Where(t => ((string)t["status"]!).ToUpperInvariant() == status).ToList();
+        }
+
+        return Task.FromResult(Success(new Dictionary<string, object?>
+        {
+            ["transactions"] = transactions,
+            ["pagination"] = new Dictionary<string, object?>
+            {
+                ["page"] = page,
+                ["page_size"] = pageSize,
+                ["total_count"] = transactions.Count,
+                ["original_total_count"] = TotalCount(response)
+            }
+        }));
     }
 
     /// <summary>
     /// Get detailed information for a specific transaction
     /// </summary>
-    /// <param name="transactionId">The transaction ID to retrieve</param>
-    /// <returns>Transaction details</returns>
-    public async Task<object> GetTransactionDetailsAsync(string transactionId)
+    public Task<Dictionary<string, object?>> GetTransactionDetailsAsync(string transactionId)
     {
         EnsureConfigured();
 
+        JsonDoc response;
         try
         {
-            var response = ReportingService.TransactionDetail(transactionId).Execute();
-
-            if (response == null)
-            {
-                throw new ApiException("Transaction not found");
-            }
-
-            return new
-            {
-                success = true,
-                data = FormatTransactionDetails(response),
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            response = GpApiGet($"/transactions/{Uri.EscapeDataString(transactionId)}");
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Failed to retrieve transaction details: {ex.Message}", ex);
+            throw ReportError("Failed to retrieve transaction details", ex);
         }
+
+        var transaction = MapTransaction(response);
+
+        var info = FormatTransaction(transaction);
+        return Task.FromResult(Success(new Dictionary<string, object?>
+        {
+            ["transaction_id"] = info["transaction_id"],
+            ["timestamp"] = info["timestamp"],
+            ["amount"] = info["amount"],
+            ["currency"] = info["currency"],
+            ["status"] = info["status"],
+            ["payment_method"] = info["payment_method"],
+            ["card_details"] = new Dictionary<string, object?>
+            {
+                ["masked_number"] = info["card_last_four"],
+                ["card_type"] = transaction.CardType ?? "",
+                ["entry_mode"] = transaction.EntryMode ?? ""
+            },
+            ["auth_code"] = info["auth_code"],
+            ["reference_number"] = info["reference_number"],
+            ["gateway_response_code"] = response.Get("payment_method")?.GetValue<string>("result") ?? "",
+            ["gateway_response_message"] = transaction.GatewayResponseMessage ?? ""
+        }));
     }
 
     /// <summary>
     /// Generate settlement report for a date range
     /// </summary>
-    /// <param name="parameters">Report parameters</param>
-    /// <returns>Settlement report data</returns>
-    public async Task<object> GetSettlementReportAsync(Dictionary<string, string> parameters)
+    public Task<Dictionary<string, object?>> GetSettlementReportAsync(Dictionary<string, string> parameters)
     {
         EnsureConfigured();
 
+        var page = IntValue(parameters, "page", 1);
+        var pageSize = IntValue(parameters, "page_size", 50);
+
+        var reportBuilder = ReportingService.FindSettlementTransactionsPaged(page, pageSize);
+        ApplyDateRange(reportBuilder, parameters);
+
+        PagedResult<TransactionSummary> response;
         try
         {
-            var page = int.TryParse(parameters.GetValueOrDefault("page", "1"), out var p) ? p : 1;
-            var pageSize = Math.Min(int.TryParse(parameters.GetValueOrDefault("page_size", "50"), out var ps) ? ps : 50, 100);
-
-            var reportBuilder = ReportingService.FindSettlementTransactionsPaged(page, pageSize);
-
-            // Apply date range
-            if (parameters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (DateTime.TryParse(startDate, out var start))
-                {
-                    reportBuilder.WithStartDate(start);
-                }
-            }
-
-            if (parameters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (DateTime.TryParse(endDate, out var end))
-                {
-                    reportBuilder.WithEndDate(end);
-                }
-            }
-
-            var response = reportBuilder.Execute();
-
-            var settlements = FormatSettlementList(response?.Results ?? new List<TransactionSummary>());
-
-            return new
-            {
-                success = true,
-                data = new
-                {
-                    settlements = settlements,
-                    summary = GenerateSettlementSummary(response?.Results ?? new List<TransactionSummary>()),
-                    pagination = new
-                    {
-                        page = page,
-                        page_size = pageSize,
-                        total_count = response?.TotalRecordCount ?? 0
-                    }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            response = reportBuilder.Execute(ConfigName);
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Settlement report generation failed: {ex.Message}", ex);
+            throw ReportError("Settlement report generation failed", ex);
         }
+
+        // GP API returns one settled transaction per row, so each row counts one transaction
+        var settlements = response.Results.Select(s => new Dictionary<string, object?>
+        {
+            ["settlement_id"] = s.TransactionId ?? "",
+            ["settlement_date"] = s.DepositDate.HasValue ? DateString(s.DepositDate) : IsoString(s.TransactionDate),
+            ["transaction_count"] = 1,
+            ["total_amount"] = Amount(s.Amount),
+            ["currency"] = Currency(s.Currency),
+            ["status"] = s.TransactionStatus ?? ""
+        }).ToList();
+
+        var totalAmount = settlements.Sum(s => (double)s["total_amount"]!);
+        return Task.FromResult(Success(new Dictionary<string, object?>
+        {
+            ["settlements"] = settlements,
+            ["summary"] = new Dictionary<string, object?>
+            {
+                ["total_settlements"] = settlements.Count,
+                ["total_amount"] = totalAmount,
+                ["total_transactions"] = settlements.Count,
+                ["average_settlement_amount"] = settlements.Count > 0 ? totalAmount / settlements.Count : 0.0
+            },
+            ["pagination"] = Pagination(page, pageSize, response.TotalRecordCount)
+        }));
     }
 
     /// <summary>
-    /// Get dispute reports with filtering and pagination
+    /// Get dispute report with filtering and pagination
     /// </summary>
-    /// <param name="filters">Dispute search filters and pagination</param>
-    /// <returns>Dispute report results</returns>
-    public async Task<object> GetDisputeReportAsync(Dictionary<string, string> filters)
+    public Task<Dictionary<string, object?>> GetDisputeReportAsync(Dictionary<string, string> filters)
     {
         EnsureConfigured();
 
+        var page = IntValue(filters, "page", 1);
+        var pageSize = IntValue(filters, "page_size", 10);
+
+        // GP API filters disputes on the stage date (from_stage_time_created / to_stage_time_created)
+        var reportBuilder = ReportingService.FindDisputesPaged(page, pageSize);
+        if (Has(filters, "start_date"))
+        {
+            reportBuilder.Where(DataServiceCriteria.StartStageDate, ParseDate(filters["start_date"]));
+        }
+        if (Has(filters, "end_date"))
+        {
+            reportBuilder.Where(DataServiceCriteria.EndStageDate, ParseDate(filters["end_date"]));
+        }
+        if (Has(filters, "stage"))
+        {
+            reportBuilder.Where(SearchCriteria.DisputeStage, MapEnum<DisputeStage>(filters["stage"], "stage"));
+        }
+        if (Has(filters, "status"))
+        {
+            reportBuilder.Where(SearchCriteria.DisputeStatus, MapEnum<DisputeStatus>(filters["status"], "status"));
+        }
+
+        PagedResult<DisputeSummary> response;
         try
         {
-            var page = int.TryParse(filters.GetValueOrDefault("page", "1"), out var p) ? p : 1;
-            var pageSize = Math.Min(int.TryParse(filters.GetValueOrDefault("page_size", "10"), out var ps) ? ps : 10, 100);
-
-            var reportBuilder = ReportingService.FindDisputesPaged(page, pageSize);
-
-            // Apply date range filters
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (DateTime.TryParse(startDate, out var start))
-                {
-                    reportBuilder.WithStartDate(start);
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (DateTime.TryParse(endDate, out var end))
-                {
-                    reportBuilder.WithEndDate(end);
-                }
-            }
-
-            // Apply dispute stage filter
-            if (filters.TryGetValue("stage", out var stage) && !string.IsNullOrEmpty(stage))
-            {
-                reportBuilder.Where(SearchCriteria.DisputeStage, MapDisputeStage(stage));
-            }
-
-            // Apply dispute status filter
-            if (filters.TryGetValue("status", out var status) && !string.IsNullOrEmpty(status))
-            {
-                reportBuilder.Where(SearchCriteria.DisputeStatus, MapDisputeStatus(status));
-            }
-
-            // Execute the search
-            var response = reportBuilder.Execute();
-
-            return new
-            {
-                success = true,
-                data = new
-                {
-                    disputes = FormatDisputeList(response?.Results ?? new List<DisputeSummary>()),
-                    pagination = new
-                    {
-                        page = page,
-                        page_size = pageSize,
-                        total_count = response?.TotalRecordCount ?? 0
-                    }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            response = reportBuilder.Execute(ConfigName);
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Dispute report generation failed: {ex.Message}", ex);
+            throw ReportError("Dispute report generation failed", ex);
         }
+
+        return Task.FromResult(Success(new Dictionary<string, object?>
+        {
+            ["disputes"] = response.Results.Select(FormatDispute).ToList(),
+            ["pagination"] = Pagination(page, pageSize, response.TotalRecordCount)
+        }));
     }
 
     /// <summary>
     /// Get detailed information for a specific dispute
     /// </summary>
-    /// <param name="disputeId">The dispute ID to retrieve</param>
-    /// <returns>Dispute details</returns>
-    public async Task<object> GetDisputeDetailsAsync(string disputeId)
+    public Task<Dictionary<string, object?>> GetDisputeDetailsAsync(string disputeId)
     {
         EnsureConfigured();
 
+        JsonDoc response;
         try
         {
-            var response = ReportingService.DisputeDetail(disputeId).Execute();
-
-            if (response == null)
-            {
-                throw new ApiException("Dispute not found");
-            }
-
-            return new
-            {
-                success = true,
-                data = FormatDisputeDetails(response),
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            response = GpApiGet($"/disputes/{Uri.EscapeDataString(disputeId)}");
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Failed to retrieve dispute details: {ex.Message}", ex);
+            throw ReportError("Failed to retrieve dispute details", ex);
         }
+
+        var dispute = GpApiMapping.MapDisputeSummary(response);
+        var details = FormatDispute(dispute);
+
+        // The SDK's dispute document mapping skips documents that have an id, so they are read here
+        var documents = (response.GetEnumerator("documents") ?? Enumerable.Empty<JsonDoc>())
+            .Where(document => !string.IsNullOrEmpty(document.GetValue<string>("id")))
+            .Select(document => new Dictionary<string, object?>
+            {
+                ["id"] = document.GetValue<string>("id"),
+                ["type"] = document.GetValue<string>("type") ?? ""
+            })
+            .ToList();
+
+        var transaction = response.Get("transaction");
+        details["transaction_id"] = transaction?.GetValue<string>("id") ?? "";
+        details["case_description"] = response.GetValue<string>("description") ?? "";
+        details["documents"] = documents;
+        details["transaction_details"] = new Dictionary<string, object?>
+        {
+            ["amount"] = transaction != null ? MinorAmount(transaction.GetValue<string>("amount")) : 0.0,
+            ["currency"] = Currency(transaction?.GetValue<string>("currency")),
+            ["masked_card_number"] = DisputeMaskedCard(response),
+            ["arn"] = dispute.TransactionARN ?? ""
+        };
+        return Task.FromResult(Success(details));
     }
 
     /// <summary>
-    /// Get deposit reports with filtering and pagination
+    /// Get deposit report with filtering and pagination
     /// </summary>
-    /// <param name="filters">Deposit search filters and pagination</param>
-    /// <returns>Deposit report results</returns>
-    public async Task<object> GetDepositReportAsync(Dictionary<string, string> filters)
+    public Task<Dictionary<string, object?>> GetDepositReportAsync(Dictionary<string, string> filters)
     {
         EnsureConfigured();
 
+        var page = IntValue(filters, "page", 1);
+        var pageSize = IntValue(filters, "page_size", 10);
+
+        var reportBuilder = ReportingService.FindDepositsPaged(page, pageSize);
+        ApplyDateRange(reportBuilder, filters);
+        if (Has(filters, "deposit_id"))
+        {
+            // The SDK sends the deposit reference as the GP API deposit id
+            reportBuilder.Where(DataServiceCriteria.DepositReference, filters["deposit_id"]);
+        }
+        if (Has(filters, "status"))
+        {
+            reportBuilder.Where(SearchCriteria.DepositStatus, MapEnum<DepositStatus>(filters["status"], "status"));
+        }
+
+        PagedResult<DepositSummary> response;
         try
         {
-            var page = int.TryParse(filters.GetValueOrDefault("page", "1"), out var p) ? p : 1;
-            var pageSize = Math.Min(int.TryParse(filters.GetValueOrDefault("page_size", "10"), out var ps) ? ps : 10, 100);
-
-            var reportBuilder = ReportingService.FindDepositsPaged(page, pageSize);
-
-            // Apply date range filters
-            if (filters.TryGetValue("start_date", out var startDate) && !string.IsNullOrEmpty(startDate))
-            {
-                if (DateTime.TryParse(startDate, out var start))
-                {
-                    reportBuilder.WithStartDate(start);
-                }
-            }
-
-            if (filters.TryGetValue("end_date", out var endDate) && !string.IsNullOrEmpty(endDate))
-            {
-                if (DateTime.TryParse(endDate, out var end))
-                {
-                    reportBuilder.WithEndDate(end);
-                }
-            }
-
-            // Apply deposit ID filter
-            if (filters.TryGetValue("deposit_id", out var depositId) && !string.IsNullOrEmpty(depositId))
-            {
-                // reportBuilder.Where(SearchCriteria.DepositReference, depositId); // Not available in this SDK version
-            }
-
-            // Apply status filter
-            if (filters.TryGetValue("status", out var status) && !string.IsNullOrEmpty(status))
-            {
-                reportBuilder.Where(SearchCriteria.DepositStatus, MapDepositStatus(status));
-            }
-
-            // Execute the search
-            var response = reportBuilder.Execute();
-
-            return new
-            {
-                success = true,
-                data = new
-                {
-                    deposits = FormatDepositList(response?.Results ?? new List<DepositSummary>()),
-                    pagination = new
-                    {
-                        page = page,
-                        page_size = pageSize,
-                        total_count = response?.TotalRecordCount ?? 0
-                    }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            response = reportBuilder.Execute(ConfigName);
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Deposit report generation failed: {ex.Message}", ex);
+            throw ReportError("Deposit report generation failed", ex);
         }
+
+        var deposits = response.Results.Select(d =>
+        {
+            var row = FormatDeposit(d);
+            row["sales_count"] = d.SalesTotalCount;
+            row["sales_amount"] = Amount(d.SalesTotalAmount);
+            row["refunds_count"] = d.RefundsTotalCount;
+            row["refunds_amount"] = Amount(d.RefundsTotalAmount);
+            return row;
+        }).ToList();
+
+        return Task.FromResult(Success(new Dictionary<string, object?>
+        {
+            ["deposits"] = deposits,
+            ["pagination"] = Pagination(page, pageSize, response.TotalRecordCount)
+        }));
     }
 
     /// <summary>
     /// Get detailed information for a specific deposit
     /// </summary>
-    /// <param name="depositId">The deposit ID to retrieve</param>
-    /// <returns>Deposit details</returns>
-    public async Task<object> GetDepositDetailsAsync(string depositId)
+    public Task<Dictionary<string, object?>> GetDepositDetailsAsync(string depositId)
     {
         EnsureConfigured();
 
+        JsonDoc response;
         try
         {
-            var response = ReportingService.DepositDetail(depositId).Execute();
-
-            if (response == null)
-            {
-                throw new ApiException("Deposit not found");
-            }
-
-            return new
-            {
-                success = true,
-                data = FormatDepositDetails(response),
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            response = GpApiGet($"/settlement/deposits/{Uri.EscapeDataString(depositId)}");
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Failed to retrieve deposit details: {ex.Message}", ex);
+            throw ReportError("Failed to retrieve deposit details", ex);
         }
+
+        var deposit = GpApiMapping.MapDepositSummary(response);
+
+        var details = FormatDeposit(deposit);
+        details["bank_account"] = new Dictionary<string, object?>
+        {
+            ["masked_account_number"] = response.Get("bank_transfer")?.GetValue<string>("masked_account_number_last4") ?? "",
+            ["bank_name"] = ""
+        };
+        details["transaction_summary"] = new Dictionary<string, object?>
+        {
+            ["sales_count"] = deposit.SalesTotalCount,
+            ["sales_amount"] = Amount(deposit.SalesTotalAmount),
+            ["refunds_count"] = deposit.RefundsTotalCount,
+            ["refunds_amount"] = Amount(deposit.RefundsTotalAmount),
+            ["chargebacks_count"] = deposit.ChargebackTotalCount,
+            ["chargebacks_amount"] = Amount(deposit.ChargebackTotalAmount),
+            ["adjustments_count"] = deposit.AdjustmentTotalCount,
+            ["adjustments_amount"] = Amount(deposit.AdjustmentTotalAmount)
+        };
+        return Task.FromResult(Success(details));
     }
 
     /// <summary>
-    /// Get batch report with detailed transaction information
+    /// Get batch report. GP API has no batch report endpoint, so this answers
+    /// with an API error, the same in every language of this sample.
     /// </summary>
-    /// <param name="filters">Batch search filters</param>
-    /// <returns>Batch report results</returns>
-    public async Task<object> GetBatchReportAsync(Dictionary<string, string> filters)
+    public Task<Dictionary<string, object?>> GetBatchReportAsync(Dictionary<string, string> filters)
     {
         EnsureConfigured();
-
-        try
-        {
-            // Note: Batch detail in .NET SDK might work differently
-            // This is a simplified implementation
-            return new
-            {
-                success = true,
-                data = new
-                {
-                    batches = new List<object>(),
-                    summary = new
-                    {
-                        total_batches = 0,
-                        total_amount = 0,
-                        total_transactions = 0,
-                        average_batch_amount = 0,
-                        status_breakdown = new Dictionary<string, int>()
-                    }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
-        }
-        catch (ApiException ex)
-        {
-            throw new ApiException($"Batch report generation failed: {ex.Message}", ex);
-        }
+        throw new ApiException("Batch report generation failed: batch reports are not available through GP API");
     }
 
     /// <summary>
     /// Get declined transactions report
     /// </summary>
-    /// <param name="filters">Decline search filters and pagination</param>
-    /// <returns>Declined transactions report</returns>
-    public async Task<object> GetDeclinedTransactionsReportAsync(Dictionary<string, string> filters)
+    public async Task<Dictionary<string, object?>> GetDeclinedTransactionsReportAsync(Dictionary<string, string> filters)
     {
-        EnsureConfigured();
+        var declineFilters = new Dictionary<string, string>(filters) { ["status"] = "DECLINED" };
 
+        Dictionary<string, object?> result;
         try
         {
-            // Add declined status filter
-            var declineFilters = new Dictionary<string, string>(filters)
-            {
-                ["status"] = "DECLINED"
-            };
-
-            var result = await SearchTransactionsAsync(declineFilters);
-
-            // Add decline analysis
-            var resultObj = (dynamic)result;
-            if (resultObj.success)
-            {
-                var transactions = (IEnumerable<dynamic>)resultObj.data.transactions;
-                var analysis = AnalyzeDeclines(transactions.ToList());
-
-                return new
-                {
-                    success = true,
-                    data = new
-                    {
-                        transactions = resultObj.data.transactions,
-                        pagination = resultObj.data.pagination,
-                        decline_analysis = analysis
-                    },
-                    timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-                };
-            }
-
-            return result;
+            result = await SearchTransactionsAsync(declineFilters);
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Declined transactions report generation failed: {ex.Message}", ex);
+            throw ReportError("Declined transactions report generation failed", ex);
         }
+
+        var data = (Dictionary<string, object?>)result["data"]!;
+        data["decline_analysis"] = AnalyzeDeclines((List<Dictionary<string, object?>>)data["transactions"]!);
+        return result;
     }
 
     /// <summary>
-    /// Get comprehensive date range report across all transaction types
+    /// Get comprehensive date range report across transactions, settlements,
+    /// disputes and deposits. A section that fails carries its error.
     /// </summary>
-    /// <param name="parameters">Date range and report parameters</param>
-    /// <returns>Comprehensive date range report</returns>
-    public async Task<object> GetDateRangeReportAsync(Dictionary<string, string> parameters)
+    public async Task<Dictionary<string, object?>> GetDateRangeReportAsync(Dictionary<string, string> parameters)
     {
         EnsureConfigured();
 
-        try
+        var startDate = Has(parameters, "start_date") ? parameters["start_date"] : DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd");
+        var endDate = Has(parameters, "end_date") ? parameters["end_date"] : DateTime.Now.ToString("yyyy-MM-dd");
+
+        var data = new Dictionary<string, object?>
         {
-            var startDate = parameters.GetValueOrDefault("start_date", DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd"));
-            var endDate = parameters.GetValueOrDefault("end_date", DateTime.Now.ToString("yyyy-MM-dd"));
+            ["period"] = new Dictionary<string, object?> { ["start_date"] = startDate, ["end_date"] = endDate }
+        };
 
-            var report = new
-            {
-                success = true,
-                data = new Dictionary<string, object>
-                {
-                    ["period"] = new { start_date = startDate, end_date = endDate },
-                    ["transactions"] = new { },
-                    ["settlements"] = new { },
-                    ["disputes"] = new { },
-                    ["deposits"] = new { },
-                    ["summary"] = new { }
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+        var sections = new (string Key, string Label, string Limit, int Default, Func<Dictionary<string, string>, Task<Dictionary<string, object?>>> Run)[]
+        {
+            ("transactions", "Transactions", "transaction_limit", 100, SearchTransactionsAsync),
+            ("settlements", "Settlements", "settlement_limit", 50, GetSettlementReportAsync),
+            ("disputes", "Disputes", "dispute_limit", 25, GetDisputeReportAsync),
+            ("deposits", "Deposits", "deposit_limit", 25, GetDepositReportAsync)
+        };
 
-            // Get transactions for the period
-            var transactionLimit = int.TryParse(parameters.GetValueOrDefault("transaction_limit", "100"), out var tl) ? tl : 100;
-            var transactionResult = await SearchTransactionsAsync(new Dictionary<string, string>
+        foreach (var section in sections)
+        {
+            var filters = new Dictionary<string, string>
             {
                 ["start_date"] = startDate,
                 ["end_date"] = endDate,
-                ["page_size"] = transactionLimit.ToString()
-            });
-
-            report.data["transactions"] = ((dynamic)transactionResult).data;
-
-            // Get settlements for the period
-            var settlementLimit = int.TryParse(parameters.GetValueOrDefault("settlement_limit", "50"), out var sl) ? sl : 50;
-            var settlementResult = await GetSettlementReportAsync(new Dictionary<string, string>
-            {
-                ["start_date"] = startDate,
-                ["end_date"] = endDate,
-                ["page_size"] = settlementLimit.ToString()
-            });
-
-            report.data["settlements"] = ((dynamic)settlementResult).data;
-
-            // Get disputes for the period
-            try
-            {
-                var disputeLimit = int.TryParse(parameters.GetValueOrDefault("dispute_limit", "25"), out var dl) ? dl : 25;
-                var disputeResult = await GetDisputeReportAsync(new Dictionary<string, string>
-                {
-                    ["start_date"] = startDate,
-                    ["end_date"] = endDate,
-                    ["page_size"] = disputeLimit.ToString()
-                });
-
-                report.data["disputes"] = ((dynamic)disputeResult).data;
-            }
-            catch (Exception ex)
-            {
-                report.data["disputes"] = new { error = $"Disputes not available: {ex.Message}" };
-            }
-
-            // Get deposits for the period
-            try
-            {
-                var depositLimit = int.TryParse(parameters.GetValueOrDefault("deposit_limit", "25"), out var depl) ? depl : 25;
-                var depositResult = await GetDepositReportAsync(new Dictionary<string, string>
-                {
-                    ["start_date"] = startDate,
-                    ["end_date"] = endDate,
-                    ["page_size"] = depositLimit.ToString()
-                });
-
-                report.data["deposits"] = ((dynamic)depositResult).data;
-            }
-            catch (Exception ex)
-            {
-                report.data["deposits"] = new { error = $"Deposits not available: {ex.Message}" };
-            }
-
-            // Generate comprehensive summary
-            report.data["summary"] = GenerateComprehensiveSummary(report.data);
-
-            return report;
-        }
-        catch (Exception ex)
-        {
-            return new
-            {
-                success = false,
-                error = $"Failed to generate date range report: {ex.Message}",
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                ["page_size"] = IntValue(parameters, section.Limit, section.Default).ToString()
             };
+            try
+            {
+                data[section.Key] = (await section.Run(filters))["data"];
+            }
+            catch (ApiException ex)
+            {
+                data[section.Key] = new Dictionary<string, object?> { ["error"] = $"{section.Label} not available: {ex.Message}" };
+            }
+            catch (Exception ex) when (ex is not ArgumentException)
+            {
+                Console.Error.WriteLine($"{section.Label} not available for the date range report: {ex}");
+                data[section.Key] = new Dictionary<string, object?> { ["error"] = $"{section.Label} not available" };
+            }
         }
+
+        data["summary"] = GenerateComprehensiveSummary(data);
+        return Success(data);
     }
 
     /// <summary>
-    /// Export transaction data in specified format
+    /// Export transaction data in specified format (json, csv or xml)
     /// </summary>
-    /// <param name="filters">Search filters</param>
-    /// <param name="format">Export format ('json', 'csv', or 'xml')</param>
-    /// <returns>Export data</returns>
-    public async Task<object> ExportTransactionsAsync(Dictionary<string, string> filters, string format)
+    public async Task<Dictionary<string, object?>> ExportTransactionsAsync(Dictionary<string, string> filters, string format)
     {
-        EnsureConfigured();
+        // GP API pages hold up to 1000 transactions
+        var exportFilters = new Dictionary<string, string>(filters) { ["page_size"] = "1000" };
 
+        Dictionary<string, object?> result;
         try
         {
-            // Get all transactions (increase limit for export)
-            var exportFilters = new Dictionary<string, string>(filters)
-            {
-                ["page_size"] = "1000"
-            };
-
-            var transactionsResult = await SearchTransactionsAsync(exportFilters);
-            var transactions = ((dynamic)transactionsResult).data.transactions;
-
-            if (format.ToLowerInvariant() == "csv")
-            {
-                return ExportToCsv(transactions);
-            }
-            else if (format.ToLowerInvariant() == "xml")
-            {
-                return ExportToXml(transactions);
-            }
-
-            return new
-            {
-                success = true,
-                data = transactions,
-                format = "json",
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
+            result = await SearchTransactionsAsync(exportFilters);
         }
         catch (ApiException ex)
         {
-            throw new ApiException($"Export failed: {ex.Message}", ex);
+            throw ReportError("Export failed", ex);
         }
+
+        var transactions = (List<Dictionary<string, object?>>)((Dictionary<string, object?>)result["data"]!)["transactions"]!;
+
+        return format switch
+        {
+            "csv" => ExportToCsv(transactions),
+            "xml" => ExportToXml(transactions),
+            _ => new Dictionary<string, object?>
+            {
+                ["success"] = true,
+                ["data"] = transactions,
+                ["format"] = "json",
+                ["timestamp"] = Now()
+            }
+        };
     }
 
     /// <summary>
     /// Get reporting summary statistics
     /// </summary>
-    /// <param name="parameters">Summary parameters</param>
-    /// <returns>Summary statistics</returns>
-    public async Task<object> GetSummaryStatsAsync(Dictionary<string, string> parameters)
+    public async Task<Dictionary<string, object?>> GetSummaryStatsAsync(Dictionary<string, string> parameters)
     {
         EnsureConfigured();
 
+        var startDate = Has(parameters, "start_date") ? parameters["start_date"] : DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd");
+        var endDate = Has(parameters, "end_date") ? parameters["end_date"] : DateTime.Now.ToString("yyyy-MM-dd");
+
+        Dictionary<string, object?> result;
         try
         {
-            var startDate = parameters.GetValueOrDefault("start_date", DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd"));
-            var endDate = parameters.GetValueOrDefault("end_date", DateTime.Now.ToString("yyyy-MM-dd"));
-
-            // Get transaction summary
-            var transactions = await SearchTransactionsAsync(new Dictionary<string, string>
+            result = await SearchTransactionsAsync(new Dictionary<string, string>
             {
                 ["start_date"] = startDate,
                 ["end_date"] = endDate,
                 ["page_size"] = "1000"
             });
-
-            var transactionList = ((dynamic)transactions).data.transactions;
-
-            return new
+        }
+        catch (Exception ex) when (ex is not ArgumentException)
+        {
+            var message = "Failed to generate summary statistics";
+            if (ex is ApiException)
             {
-                success = true,
-                data = CalculateSummaryStats(transactionList),
-                period = new
+                message += $": {ex.Message}";
+            }
+            else
+            {
+                Console.Error.WriteLine($"{message}: {ex}");
+            }
+            return new Dictionary<string, object?> { ["success"] = false, ["error"] = message, ["timestamp"] = Now() };
+        }
+
+        var transactions = (List<Dictionary<string, object?>>)((Dictionary<string, object?>)result["data"]!)["transactions"]!;
+        return new Dictionary<string, object?>
+        {
+            ["success"] = true,
+            ["data"] = CalculateSummaryStats(transactions),
+            ["period"] = new Dictionary<string, object?> { ["start_date"] = startDate, ["end_date"] = endDate },
+            ["timestamp"] = Now()
+        };
+    }
+
+    /// <summary>
+    /// Get SDK configuration status. Answers without credentials.
+    /// </summary>
+    public static Dictionary<string, object?> GetSdkConfigStatus()
+    {
+        var hasAppId = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_API_APP_ID"));
+        var hasAppKey = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("GP_API_APP_KEY"));
+        var isConfigured = hasAppId && hasAppKey;
+
+        return new Dictionary<string, object?>
+        {
+            ["configured"] = isConfigured,
+            ["has_app_id"] = hasAppId,
+            ["has_app_key"] = hasAppKey,
+            ["environment"] = isConfigured ? "TEST" : "Not configured",
+            ["timestamp"] = Now()
+        };
+    }
+
+    /// <summary>
+    /// Validate environment configuration. Answers without credentials.
+    /// </summary>
+    public static Dictionary<string, object?> ValidateEnvironmentConfig()
+    {
+        var errors = new List<string>();
+        var warnings = new List<string>();
+
+        foreach (var name in new[] { "GP_API_APP_ID", "GP_API_APP_KEY" })
+        {
+            if (string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable(name)))
+            {
+                errors.Add($"Missing required environment variable: {name}");
+            }
+        }
+        foreach (var name in new[] { "PUBLIC_API_KEY", "SECRET_API_KEY" })
+        {
+            if (!string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable(name)))
+            {
+                warnings.Add($"Legacy variable {name} found. GP-API uses GP_API_APP_ID and GP_API_APP_KEY.");
+            }
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["valid"] = errors.Count == 0,
+            ["errors"] = errors,
+            ["warnings"] = warnings
+        };
+    }
+
+    #region Helper methods
+
+    /// <summary>
+    /// Wrap an SDK error with the report that failed. GP API errors read
+    /// "Status Code: ERROR_CODE - description", as in the other SDKs (the .NET
+    /// SDK puts the HTTP status name there).
+    /// </summary>
+    private static ApiException ReportError(string prefix, ApiException ex)
+    {
+        var message = ex.Message;
+        if (ex is GatewayException gateway && !string.IsNullOrEmpty(gateway.ResponseCode)
+            && message.StartsWith("Status Code: ") && message.Contains(" - "))
+        {
+            message = $"Status Code: {gateway.ResponseCode}{message[message.IndexOf(" - ", StringComparison.Ordinal)..]}";
+        }
+        return new ApiException($"{prefix}: {message}", ex);
+    }
+
+    private static Dictionary<string, object?> Success(Dictionary<string, object?> data) => new()
+    {
+        ["success"] = true,
+        ["data"] = data,
+        ["timestamp"] = Now()
+    };
+
+    private static Dictionary<string, object?> Pagination(int page, int pageSize, int totalCount) => new()
+    {
+        ["page"] = page,
+        ["page_size"] = pageSize,
+        ["total_count"] = totalCount
+    };
+
+    private static string Now() => DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static bool Has(Dictionary<string, string> map, string key) =>
+        map.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value);
+
+    private static int IntValue(Dictionary<string, string> map, string key, int defaultValue) =>
+        map.TryGetValue(key, out var value) && int.TryParse(value, out var number) && number > 0 ? number : defaultValue;
+
+    private static bool TryDouble(Dictionary<string, string> map, string key, out double value)
+    {
+        value = 0;
+        return Has(map, key) && double.TryParse(map[key], NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
+    /// <summary>A YYYY-MM-DD date, which the SDK writes back as the same day</summary>
+    private static DateTime ParseDate(string value) =>
+        DateTime.ParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Dates go through Where(): the report builders the SDK hands out are
+    /// ReportBuilders, whose WithStartDate() the GP API request does not read
+    /// </summary>
+    private static void ApplyDateRange<T>(ReportBuilder<T> builder, Dictionary<string, string> filters) where T : class
+    {
+        if (Has(filters, "start_date"))
+        {
+            builder.Where(SearchCriteria.StartDate, ParseDate(filters["start_date"]));
+        }
+        if (Has(filters, "end_date"))
+        {
+            builder.Where(SearchCriteria.EndDate, ParseDate(filters["end_date"]));
+        }
+    }
+
+    /// <summary>
+    /// The SDK enum for a GP API value such as CHARGEBACK or UNDER_REVIEW. The SDK
+    /// maps its enum names to the GP API values (Chargeback is CHARGEBACK), so the
+    /// value is matched without the underscores.
+    /// </summary>
+    private static T MapEnum<T>(string value, string name) where T : struct, Enum
+    {
+        var key = value.Replace("_", "").Replace(" ", "");
+        if (!int.TryParse(key, out _) && Enum.TryParse<T>(key, true, out var result) && Enum.IsDefined(result))
+        {
+            return result;
+        }
+        throw new ArgumentException($"Invalid {name}. Supported values: {string.Join(", ", Enum.GetNames<T>())}");
+    }
+
+    private static string Currency(string? value) => string.IsNullOrEmpty(value) ? "USD" : value;
+
+    private static double Amount(decimal? value) => value.HasValue ? (double)value.Value : 0.0;
+
+    /// <summary>A GP API amount in minor units, e.g. "6500" is 65.00</summary>
+    private static double MinorAmount(string value) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) ? number / 100 : 0.0;
+
+    /// <summary>
+    /// SDK times as ISO strings in UTC. GP API sends times in UTC, a time that
+    /// comes without a zone is read as UTC as well.
+    /// </summary>
+    private static string IsoString(DateTime? value)
+    {
+        if (!value.HasValue)
+        {
+            return "";
+        }
+        var time = value.Value.Kind switch
+        {
+            DateTimeKind.Local => value.Value.ToUniversalTime(),
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(value.Value, DateTimeKind.Utc),
+            _ => value.Value
+        };
+        return time.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>SDK dates (GP API sends deposit dates as plain dates)</summary>
+    private static string DateString(DateTime? value) =>
+        value.HasValue ? value.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+
+    /// <summary>The card of the disputed transaction when GP API sends one, else the dispute's own card</summary>
+    private static string DisputeMaskedCard(JsonDoc dispute)
+    {
+        var transactionCard = dispute.Get("transaction")?.Get("payment_method")?.Get("card");
+        if (transactionCard != null)
+        {
+            return transactionCard.GetValue<string>("masked_number_first6last4") ?? "";
+        }
+        return dispute.Get("payment_method")?.Get("card")?.GetValue<string>("number") ?? "";
+    }
+
+    private static int TotalCount(JsonDoc response) => response.GetValue<int>("total_record_count", "total_count");
+
+    /// <summary>
+    /// Map a GP API transaction with the SDK's mapping. The 3DS block is left
+    /// out: the reports do not use it and the SDK's 3DS mapping throws on the
+    /// exempt_status field (InvalidCastException to ExemptStatus).
+    /// </summary>
+    private static TransactionSummary MapTransaction(JsonDoc row)
+    {
+        row.Get("payment_method")?.Remove("authentication");
+        return GpApiMapping.MapTransactionSummary(row);
+    }
+
+    /// <summary>
+    /// An SDK access token, signed in again before it gets old
+    /// </summary>
+    private string AccessToken(bool renew)
+    {
+        lock (_tokenLock)
+        {
+            if (renew || _accessToken == null || DateTime.UtcNow >= _accessTokenExpires)
+            {
+                var token = GpApiService.GenerateTransactionKey(new GpApiConfig
                 {
-                    start_date = startDate,
-                    end_date = endDate
-                },
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
-        }
-        catch (Exception ex)
-        {
-            return new
-            {
-                success = false,
-                error = $"Failed to generate summary statistics: {ex.Message}",
-                timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-            };
-        }
-    }
-
-    // Private helper methods
-
-    private void EnsureConfigured()
-    {
-        if (!_isConfigured)
-        {
-            throw new InvalidOperationException("SDK is not properly configured");
-        }
-    }
-
-    private PaymentType? MapPaymentType(string type)
-    {
-        return type.ToLowerInvariant() switch
-        {
-            "sale" => PaymentType.Sale,
-            "refund" => PaymentType.Refund,
-            _ => null
-        };
-    }
-
-    private DisputeStage MapDisputeStage(string stage)
-    {
-        return stage.ToUpperInvariant() switch
-        {
-            "CHARGEBACK" => DisputeStage.Chargeback,
-            "RETRIEVAL" => DisputeStage.Retrieval,
-            _ => DisputeStage.Chargeback
-        };
-    }
-
-    private DisputeStatus MapDisputeStatus(string status)
-    {
-        return status.ToUpperInvariant() switch
-        {
-            "UNDER_REVIEW" => DisputeStatus.UnderReview,
-            "WITH_MERCHANT" => DisputeStatus.WithMerchant,
-            "CLOSED" => DisputeStatus.Closed,
-            _ => DisputeStatus.UnderReview
-        };
-    }
-
-    private DepositStatus MapDepositStatus(string status)
-    {
-        return status.ToUpperInvariant() switch
-        {
-            "FUNDED" => DepositStatus.Funded,
-            _ => DepositStatus.Funded
-        };
-    }
-
-    private List<object> FormatTransactionList(IEnumerable<TransactionSummary> transactions)
-    {
-        return transactions.Select(t => (object)new
-        {
-            transaction_id = t.TransactionId ?? "",
-            timestamp = t.TransactionDate?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-            amount = t.Amount ?? 0,
-            currency = t.Currency ?? "USD",
-            status = t.TransactionStatus ?? "",
-            payment_method = t.PaymentType?.ToString() ?? "",
-            card_last_four = t.MaskedCardNumber?.Length >= 4 ? t.MaskedCardNumber.Substring(t.MaskedCardNumber.Length - 4) : "",
-            auth_code = t.AuthCode ?? "",
-            reference_number = t.ReferenceNumber ?? ""
-        }).ToList();
-    }
-
-    private object FormatTransactionDetails(TransactionSummary transaction)
-    {
-        return new
-        {
-            transaction_id = transaction.TransactionId ?? "",
-            timestamp = transaction.TransactionDate?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-            amount = transaction.Amount ?? 0,
-            currency = transaction.Currency ?? "USD",
-            status = transaction.TransactionStatus ?? "",
-            payment_method = transaction.PaymentType?.ToString() ?? "",
-            card_details = new
-            {
-                masked_number = transaction.MaskedCardNumber ?? "",
-                card_type = transaction.CardType ?? "",
-                entry_mode = transaction.EntryMode ?? ""
-            },
-            auth_code = transaction.AuthCode ?? "",
-            reference_number = transaction.ReferenceNumber ?? "",
-            gateway_response_code = transaction.GatewayResponseCode ?? "",
-            gateway_response_message = transaction.GatewayResponseMessage ?? ""
-        };
-    }
-
-    private List<object> FormatSettlementList(IEnumerable<TransactionSummary> settlements)
-    {
-        return settlements.Select(s => (object)new
-        {
-            settlement_id = s.TransactionId ?? "",
-            settlement_date = s.TransactionDate?.ToString("yyyy-MM-dd") ?? "",
-            transaction_count = 1,
-            total_amount = s.Amount ?? 0,
-            currency = s.Currency ?? "USD",
-            status = s.TransactionStatus ?? ""
-        }).ToList();
-    }
-
-    private object GenerateSettlementSummary(IEnumerable<TransactionSummary> settlements)
-    {
-        var settlementList = settlements.ToList();
-        var totalAmount = settlementList.Sum(s => s.Amount ?? 0);
-        var totalTransactions = settlementList.Count;
-
-        return new
-        {
-            total_settlements = settlementList.Count,
-            total_amount = totalAmount,
-            total_transactions = totalTransactions,
-            average_settlement_amount = settlementList.Count > 0 ? totalAmount / settlementList.Count : 0
-        };
-    }
-
-    private List<object> FormatDisputeList(IEnumerable<DisputeSummary> disputes)
-    {
-        return disputes.Select(d => (object)new
-        {
-            dispute_id = d.CaseId ?? "",
-            transaction_id = GetPropertyValue(d, "TransactionId") ?? "",
-            case_number = d.CaseNumber ?? "",
-            dispute_stage = d.CaseStage ?? "",
-            dispute_status = d.CaseStatus ?? "",
-            case_amount = d.CaseAmount ?? 0,
-            currency = d.CaseCurrency ?? "USD",
-            reason_code = d.ReasonCode ?? "",
-            reason_description = d.Reason ?? "",
-            case_time = d.CaseTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-            last_adjustment_time = GetPropertyValue(d, "LastAdjustmentTime") is DateTime dt ? dt.ToString("yyyy-MM-dd HH:mm:ss") : ""
-        }).ToList();
-    }
-
-    private object FormatDisputeDetails(DisputeSummary dispute)
-    {
-        return new
-        {
-            dispute_id = dispute.CaseId ?? "",
-            transaction_id = GetPropertyValue(dispute, "TransactionId") ?? "",
-            case_number = dispute.CaseNumber ?? "",
-            dispute_stage = dispute.CaseStage ?? "",
-            dispute_status = dispute.CaseStatus ?? "",
-            case_amount = dispute.CaseAmount ?? 0,
-            currency = dispute.CaseCurrency ?? "USD",
-            reason_code = dispute.ReasonCode ?? "",
-            reason_description = dispute.Reason ?? "",
-            case_time = dispute.CaseTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "",
-            last_adjustment_time = GetPropertyValue(dispute, "LastAdjustmentTime") is DateTime dt ? dt.ToString("yyyy-MM-dd HH:mm:ss") : "",
-            case_description = "",
-            documents = new List<object>(),
-            transaction_details = new
-            {
-                amount = 0,
-                currency = "USD",
-                masked_card_number = "",
-                arn = ""
+                    AppId = System.Environment.GetEnvironmentVariable("GP_API_APP_ID"),
+                    AppKey = System.Environment.GetEnvironmentVariable("GP_API_APP_KEY"),
+                    Environment = GlobalPayments.Api.Entities.Environment.TEST
+                });
+                _accessToken = token.Token;
+                _accessTokenExpires = DateTime.UtcNow.AddMinutes(10);
             }
-        };
+            return _accessToken!;
+        }
     }
 
-    private List<object> FormatDepositList(IEnumerable<DepositSummary> deposits)
+    /// <summary>
+    /// GET a GP API endpoint with an SDK access token. Used where the SDK's
+    /// report mapping fails on the answer or leaves out fields the reports
+    /// show; the answer is then mapped with the SDK's GpApiMapping. GP API
+    /// errors read "Status Code: ERROR_CODE - description", as in the SDKs.
+    /// </summary>
+    private JsonDoc GpApiGet(string endpoint, Dictionary<string, string?>? query = null)
     {
-        return deposits.Select(d => (object)new
+        var url = GpApiUrl + endpoint;
+        var parameters = (query ?? new Dictionary<string, string?>())
+            .Where(p => !string.IsNullOrEmpty(p.Value))
+            .Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value!)}")
+            .ToList();
+        if (parameters.Count > 0)
         {
-            deposit_id = d.DepositId ?? "",
-            deposit_date = d.DepositDate?.ToString("yyyy-MM-dd") ?? "",
-            deposit_reference = d.Reference ?? "",
-            deposit_status = d.Status ?? "",
-            deposit_amount = d.Amount ?? 0,
-            currency = d.Currency ?? "USD",
-            merchant_number = d.MerchantNumber ?? "",
-            merchant_hierarchy = d.MerchantHierarchy ?? "",
-            sales_count = GetPropertyValue(d, "SalesCount") ?? 0,
-            sales_amount = GetPropertyValue(d, "SalesAmount") ?? 0,
-            refunds_count = GetPropertyValue(d, "RefundsCount") ?? 0,
-            refunds_amount = GetPropertyValue(d, "RefundsAmount") ?? 0
-        }).ToList();
-    }
+            url += "?" + string.Join("&", parameters);
+        }
 
-    private object FormatDepositDetails(DepositSummary deposit)
-    {
-        return new
+        HttpResponseMessage Send(bool renew)
         {
-            deposit_id = deposit.DepositId ?? "",
-            deposit_date = deposit.DepositDate?.ToString("yyyy-MM-dd") ?? "",
-            deposit_reference = deposit.Reference ?? "",
-            deposit_status = deposit.Status ?? "",
-            deposit_amount = deposit.Amount ?? 0,
-            currency = deposit.Currency ?? "USD",
-            merchant_number = deposit.MerchantNumber ?? "",
-            merchant_hierarchy = deposit.MerchantHierarchy ?? "",
-            bank_account = new
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("X-GP-Version", GpApiVersion);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AccessToken(renew));
+            try
             {
-                masked_account_number = "",
-                bank_name = ""
-            },
-            transaction_summary = new
-            {
-                sales_count = GetPropertyValue(deposit, "SalesCount") ?? 0,
-                sales_amount = GetPropertyValue(deposit, "SalesAmount") ?? 0,
-                refunds_count = GetPropertyValue(deposit, "RefundsCount") ?? 0,
-                refunds_amount = GetPropertyValue(deposit, "RefundsAmount") ?? 0,
-                chargebacks_count = 0,
-                chargebacks_amount = 0,
-                adjustments_count = 0,
-                adjustments_amount = 0
+                return Http.Send(request);
             }
-        };
+            catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException)
+            {
+                throw new ApiException("Error occurred while communicating with gateway.", ex);
+            }
+        }
+
+        var response = Send(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            response = Send(true);
+        }
+
+        var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = string.IsNullOrEmpty(body) ? null : JsonDoc.Parse(body);
+            var code = error?.GetValue<string>("error_code") ?? ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture);
+            var description = error?.GetValue<string>("detailed_error_description") ?? response.ReasonPhrase;
+            throw new ApiException($"Status Code: {code} - {description}");
+        }
+        return JsonDoc.Parse(string.IsNullOrEmpty(body) ? "{}" : body);
     }
 
-    private object CalculateSummaryStats(dynamic transactions)
+    private static Dictionary<string, object?> FormatTransaction(TransactionSummary t) => new()
     {
-        var transactionList = ((IEnumerable<dynamic>)transactions).ToList();
-        decimal totalAmount = 0;
+        ["transaction_id"] = t.TransactionId ?? "",
+        ["timestamp"] = IsoString(t.TransactionDate),
+        ["amount"] = Amount(t.Amount),
+        ["currency"] = Currency(t.Currency),
+        ["status"] = t.TransactionStatus ?? "",
+        ["payment_method"] = t.PaymentType ?? "",
+        ["card_last_four"] = t.MaskedCardNumber ?? "",
+        ["auth_code"] = t.AuthCode ?? "",
+        ["reference_number"] = t.ReferenceNumber ?? ""
+    };
+
+    /// <summary>
+    /// Fields shared by the dispute list and the dispute detail. The list has
+    /// only the stage time, the detail has the time the case was created.
+    /// </summary>
+    private static Dictionary<string, object?> FormatDispute(DisputeSummary d) => new()
+    {
+        ["dispute_id"] = d.CaseId ?? "",
+        ["transaction_id"] = "",
+        ["case_number"] = "",
+        ["dispute_stage"] = d.CaseStage ?? "",
+        ["dispute_status"] = d.CaseStatus ?? "",
+        ["case_amount"] = Amount(d.CaseAmount),
+        ["currency"] = Currency(d.CaseCurrency),
+        ["reason_code"] = d.ReasonCode ?? "",
+        ["reason_description"] = d.Reason ?? "",
+        ["case_time"] = IsoString(d.CaseIdTime ?? d.CaseStageTime),
+        ["last_adjustment_time"] = ""
+    };
+
+    private static Dictionary<string, object?> FormatDeposit(DepositSummary d) => new()
+    {
+        ["deposit_id"] = d.DepositId ?? "",
+        ["deposit_date"] = DateString(d.DepositDate),
+        ["deposit_reference"] = "",
+        ["deposit_status"] = d.Status ?? "",
+        ["deposit_amount"] = Amount(d.Amount),
+        ["currency"] = Currency(d.Currency),
+        ["merchant_number"] = d.MerchantNumber ?? "",
+        ["merchant_hierarchy"] = d.MerchantHierarchy ?? ""
+    };
+
+    private static double Sum(List<Dictionary<string, object?>> rows, string field) =>
+        rows.Sum(row => row.TryGetValue(field, out var value) && value is double number ? number : 0.0);
+
+    private static string OrDefault(object? value, string fallback) =>
+        value is string text && text != "" ? text : fallback;
+
+    private static Dictionary<string, object?> CalculateSummaryStats(List<Dictionary<string, object?>> transactions)
+    {
+        var totalAmount = Sum(transactions, "amount");
         var statusCounts = new Dictionary<string, int>();
         var paymentTypeCounts = new Dictionary<string, int>();
 
-        foreach (var transaction in transactionList)
+        foreach (var t in transactions)
         {
-            totalAmount += (decimal)(transaction.amount ?? 0);
-
-            var status = (string)(transaction.status ?? "unknown");
-            statusCounts[status] = statusCounts.GetValueOrDefault(status, 0) + 1;
-
-            var paymentType = (string)(transaction.payment_method ?? "unknown");
-            paymentTypeCounts[paymentType] = paymentTypeCounts.GetValueOrDefault(paymentType, 0) + 1;
+            var status = OrDefault(t["status"], "unknown");
+            statusCounts[status] = statusCounts.GetValueOrDefault(status) + 1;
+            var paymentType = OrDefault(t["payment_method"], "unknown");
+            paymentTypeCounts[paymentType] = paymentTypeCounts.GetValueOrDefault(paymentType) + 1;
         }
 
-        return new
+        return new Dictionary<string, object?>
         {
-            total_transactions = transactionList.Count,
-            total_amount = totalAmount,
-            average_amount = transactionList.Count > 0 ? totalAmount / transactionList.Count : 0,
-            status_breakdown = statusCounts,
-            payment_type_breakdown = paymentTypeCounts
+            ["total_transactions"] = transactions.Count,
+            ["total_amount"] = totalAmount,
+            ["average_amount"] = transactions.Count > 0 ? totalAmount / transactions.Count : 0.0,
+            ["status_breakdown"] = statusCounts,
+            ["payment_type_breakdown"] = paymentTypeCounts
         };
     }
 
-    private object ExportToCsv(dynamic transactions)
+    private static Dictionary<string, object?> AnalyzeDeclines(List<Dictionary<string, object?>> transactions)
     {
-        var transactionList = ((IEnumerable<dynamic>)transactions).ToList();
-        var csv = new StringBuilder();
-        csv.AppendLine("Transaction ID,Timestamp,Amount,Currency,Status,Payment Method,Card Last Four,Auth Code,Reference Number");
-
-        foreach (var transaction in transactionList)
-        {
-            csv.AppendLine($"{transaction.transaction_id},{transaction.timestamp},{transaction.amount},{transaction.currency},{transaction.status},{transaction.payment_method},{transaction.card_last_four},{transaction.auth_code},{transaction.reference_number}");
-        }
-
-        return new
-        {
-            success = true,
-            data = csv.ToString(),
-            format = "csv",
-            filename = $"transactions_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.csv",
-            timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-        };
-    }
-
-    private object ExportToXml(dynamic transactions)
-    {
-        var transactionList = ((IEnumerable<dynamic>)transactions).ToList();
-        var xml = new StringBuilder();
-        xml.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        xml.AppendLine("<transactions>");
-
-        foreach (var transaction in transactionList)
-        {
-            xml.AppendLine("  <transaction>");
-            xml.AppendLine($"    <transaction_id>{transaction.transaction_id}</transaction_id>");
-            xml.AppendLine($"    <timestamp>{transaction.timestamp}</timestamp>");
-            xml.AppendLine($"    <amount>{transaction.amount}</amount>");
-            xml.AppendLine($"    <currency>{transaction.currency}</currency>");
-            xml.AppendLine($"    <status>{transaction.status}</status>");
-            xml.AppendLine($"    <payment_method>{transaction.payment_method}</payment_method>");
-            xml.AppendLine($"    <card_last_four>{transaction.card_last_four}</card_last_four>");
-            xml.AppendLine($"    <auth_code>{transaction.auth_code}</auth_code>");
-            xml.AppendLine($"    <reference_number>{transaction.reference_number}</reference_number>");
-            xml.AppendLine("  </transaction>");
-        }
-
-        xml.AppendLine("</transactions>");
-
-        return new
-        {
-            success = true,
-            data = xml.ToString(),
-            format = "xml",
-            filename = $"transactions_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.xml",
-            timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
-        };
-    }
-
-    private object AnalyzeDeclines(List<dynamic> transactions)
-    {
+        var totalAmount = Sum(transactions, "amount");
         var declineReasons = new Dictionary<string, int>();
         var cardTypes = new Dictionary<string, int>();
         var hourlyBreakdown = new Dictionary<string, int>();
-        decimal totalAmount = 0;
 
-        foreach (var transaction in transactions)
+        foreach (var t in transactions)
         {
-            // Analyze decline reasons
-            var reason = (string)(transaction.gateway_response_message ?? "Unknown");
-            declineReasons[reason] = declineReasons.GetValueOrDefault(reason, 0) + 1;
+            // The list rows carry no gateway message
+            declineReasons["Unknown"] = declineReasons.GetValueOrDefault("Unknown") + 1;
+            var cardType = OrDefault(t["payment_method"], "Unknown");
+            cardTypes[cardType] = cardTypes.GetValueOrDefault(cardType) + 1;
 
-            // Analyze card types
-            var cardType = (string)(transaction.payment_method ?? "Unknown");
-            cardTypes[cardType] = cardTypes.GetValueOrDefault(cardType, 0) + 1;
-
-            // Analyze hourly patterns
-            var timestamp = (string)(transaction.timestamp ?? "");
-            if (!string.IsNullOrEmpty(timestamp) && DateTime.TryParse(timestamp, out var dt))
+            // Hours are counted in UTC, as GP API sends the times
+            if (DateTimeOffset.TryParse(t["timestamp"] as string, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var time))
             {
-                var hour = dt.Hour.ToString("D2");
-                hourlyBreakdown[hour] = hourlyBreakdown.GetValueOrDefault(hour, 0) + 1;
+                var hour = time.UtcDateTime.ToString("HH", CultureInfo.InvariantCulture);
+                hourlyBreakdown[hour] = hourlyBreakdown.GetValueOrDefault(hour) + 1;
             }
-
-            totalAmount += (decimal)(transaction.amount ?? 0);
         }
 
-        return new
+        return new Dictionary<string, object?>
         {
-            total_declined_transactions = transactions.Count,
-            total_declined_amount = totalAmount,
-            average_declined_amount = transactions.Count > 0 ? totalAmount / transactions.Count : 0,
-            decline_reasons = declineReasons,
-            card_type_breakdown = cardTypes,
-            hourly_breakdown = hourlyBreakdown
+            ["total_declined_transactions"] = transactions.Count,
+            ["total_declined_amount"] = totalAmount,
+            ["average_declined_amount"] = transactions.Count > 0 ? totalAmount / transactions.Count : 0.0,
+            ["decline_reasons"] = declineReasons,
+            ["card_type_breakdown"] = cardTypes,
+            ["hourly_breakdown"] = hourlyBreakdown
         };
     }
 
-    private object GenerateComprehensiveSummary(Dictionary<string, object> reportData)
+    private static List<Dictionary<string, object?>> SectionRows(Dictionary<string, object?> data, string key) =>
+        data.TryGetValue(key, out var section) && section is Dictionary<string, object?> map
+            && map.TryGetValue(key, out var rows) && rows is List<Dictionary<string, object?>> list
+            ? list : new List<Dictionary<string, object?>>();
+
+    private static Dictionary<string, object?> GenerateComprehensiveSummary(Dictionary<string, object?> data)
     {
-        var summary = new Dictionary<string, object>
-        {
-            ["overview"] = new Dictionary<string, object>(),
-            ["financial_summary"] = new Dictionary<string, object>(),
-            ["operational_metrics"] = new Dictionary<string, object>()
-        };
+        var overview = new Dictionary<string, object?>();
+        var financial = new Dictionary<string, object?>();
+        var operational = new Dictionary<string, object?>();
 
-        // Transaction overview
-        if (reportData.TryGetValue("transactions", out var transactionsObj))
+        var transactions = SectionRows(data, "transactions");
+        if (transactions.Count > 0)
         {
-            var transactions = ((dynamic)transactionsObj).transactions;
-            if (transactions != null)
+            var total = Sum(transactions, "amount");
+            overview["transactions"] = new Dictionary<string, object?>
             {
-                var transactionList = ((IEnumerable<dynamic>)transactions).ToList();
-                var transactionCount = transactionList.Count;
-                var totalAmount = transactionList.Sum(t => (decimal)(t.amount ?? 0));
+                ["count"] = transactions.Count,
+                ["total_amount"] = total,
+                ["average_amount"] = total / transactions.Count
+            };
+        }
 
-                ((Dictionary<string, object>)summary["overview"])["transactions"] = new
+        var settlements = SectionRows(data, "settlements");
+        if (settlements.Count > 0)
+        {
+            financial["settlements"] = new Dictionary<string, object?>
+            {
+                ["count"] = settlements.Count,
+                ["total_amount"] = Sum(settlements, "total_amount")
+            };
+        }
+
+        var disputes = SectionRows(data, "disputes");
+        if (disputes.Count > 0)
+        {
+            operational["disputes"] = new Dictionary<string, object?>
+            {
+                ["count"] = disputes.Count,
+                ["total_amount"] = Sum(disputes, "case_amount"),
+                ["dispute_rate"] = transactions.Count > 0 ? (double)disputes.Count / transactions.Count * 100 : 0.0
+            };
+        }
+
+        var deposits = SectionRows(data, "deposits");
+        if (deposits.Count > 0)
+        {
+            financial["deposits"] = new Dictionary<string, object?>
+            {
+                ["count"] = deposits.Count,
+                ["total_amount"] = Sum(deposits, "deposit_amount")
+            };
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["overview"] = overview,
+            ["financial_summary"] = financial,
+            ["operational_metrics"] = operational
+        };
+    }
+
+    private static string ExportFilename(string extension) =>
+        $"transactions_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.{extension}";
+
+    private static readonly string[] ExportFields =
+        { "transaction_id", "timestamp", "amount", "currency", "status", "payment_method", "card_last_four", "auth_code", "reference_number" };
+
+    private static Dictionary<string, object?> ExportToCsv(List<Dictionary<string, object?>> transactions)
+    {
+        static string Field(object? value)
+        {
+            var text = value?.ToString() ?? "";
+            return text.IndexOfAny(new[] { '"', ',', '\r', '\n' }) >= 0 ? $"\"{text.Replace("\"", "\"\"")}\"" : text;
+        }
+
+        var csv = new StringBuilder("Transaction ID,Timestamp,Amount,Currency,Status,Payment Method,Card Last Four,Auth Code,Reference Number\n");
+        foreach (var t in transactions)
+        {
+            csv.Append(string.Join(",", ExportFields.Select(name => name == "amount"
+                ? ((double)t[name]!).ToString("F2", CultureInfo.InvariantCulture)
+                : Field(t[name])))).Append('\n');
+        }
+
+        return new Dictionary<string, object?>
+        {
+            ["success"] = true,
+            ["data"] = csv.ToString(),
+            ["format"] = "csv",
+            ["filename"] = ExportFilename("csv"),
+            ["timestamp"] = Now()
+        };
+    }
+
+    private static Dictionary<string, object?> ExportToXml(List<Dictionary<string, object?>> transactions)
+    {
+        var output = new StringBuilder();
+        var settings = new XmlWriterSettings { Indent = true, IndentChars = "  ", Encoding = new UTF8Encoding(false), NewLineChars = "\n" };
+        using (var writer = XmlWriter.Create(new StringWriterUtf8(output), settings))
+        {
+            writer.WriteStartDocument();
+            writer.WriteStartElement("transactions");
+            foreach (var t in transactions)
+            {
+                writer.WriteStartElement("transaction");
+                foreach (var name in ExportFields)
                 {
-                    count = transactionCount,
-                    total_amount = totalAmount,
-                    average_amount = transactionCount > 0 ? totalAmount / transactionCount : 0
-                };
+                    var value = t[name];
+                    writer.WriteElementString(name, value is double number
+                        ? number.ToString(CultureInfo.InvariantCulture)
+                        : value?.ToString() ?? "");
+                }
+                writer.WriteEndElement();
             }
+            writer.WriteEndElement();
+            writer.WriteEndDocument();
         }
 
-        return summary;
+        return new Dictionary<string, object?>
+        {
+            ["success"] = true,
+            ["data"] = output.ToString(),
+            ["format"] = "xml",
+            ["filename"] = ExportFilename("xml"),
+            ["timestamp"] = Now()
+        };
     }
 
-    private object GetPropertyValue(object obj, string propertyName)
+    /// <summary>A string writer that declares UTF-8 in the XML header</summary>
+    private sealed class StringWriterUtf8 : StringWriter
     {
-        try
-        {
-            var property = obj.GetType().GetProperty(propertyName);
-            return property?.GetValue(obj);
-        }
-        catch
-        {
-            return null;
-        }
+        public StringWriterUtf8(StringBuilder builder) : base(builder, CultureInfo.InvariantCulture) { }
+
+        public override Encoding Encoding => new UTF8Encoding(false);
     }
+
+    #endregion
 }

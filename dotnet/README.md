@@ -4,8 +4,9 @@ A comprehensive .NET implementation for Global Payments payment processing and t
 
 ## Requirements
 
-- .NET 8.0 SDK
-- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
+- .NET 10 SDK
+- GP API sandbox credentials (`GP_API_APP_ID`, `GP_API_APP_KEY`) for the reports
+- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`) for the payment form
 
 ## Quick Start
 
@@ -14,9 +15,13 @@ A comprehensive .NET implementation for Global Payments payment processing and t
 Copy `.env.sample` to `.env` and add your credentials:
 
 ```env
+GP_API_APP_ID=your_gp_api_app_id
+GP_API_APP_KEY=your_gp_api_app_key
 PUBLIC_API_KEY=pkapi_cert_your_key_here
 SECRET_API_KEY=skapi_cert_your_key_here
 ```
+
+The reports are read from GP API (sandbox) with `GP_API_APP_ID` and `GP_API_APP_KEY`; variables set in the environment work as well as `.env`. Every report answers on `/api/reports?action={action}` (as in Node.js, Python and Go) and on `/api/reports/{action}`.
 
 ### 2. Install Dependencies
 
@@ -154,8 +159,10 @@ curl "http://localhost:8000/api/reports/export?format=csv&start_date=2025-09-01"
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PUBLIC_API_KEY` | Yes | Portico public key for payment processing |
-| `SECRET_API_KEY` | Yes | Portico secret key for payment processing |
+| `GP_API_APP_ID` | Yes | GP API app ID for the reports |
+| `GP_API_APP_KEY` | Yes | GP API app key for the reports |
+| `PUBLIC_API_KEY` | No | Portico public key for the payment form |
+| `SECRET_API_KEY` | No | Portico secret key for the payment form |
 
 ## Troubleshooting
 

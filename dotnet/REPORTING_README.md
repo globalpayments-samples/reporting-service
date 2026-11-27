@@ -32,7 +32,9 @@ curl "http://localhost:8000/api/reports/config"
 
 ## API Endpoints
 
-All endpoints use `/api/reports/{action}` and support both GET and POST requests.
+All endpoints use `/api/reports?action={action_name}` or `/api/reports/{action}` (for example `/api/reports/search`, `/api/reports/date-range`) and support both GET and POST requests. The details also answer on `/api/reports/detail/{id}`, `/api/reports/disputes/{id}` and `/api/reports/deposits/{id}`.
+
+The SDK (GlobalPayments.Api 9.0.16) is used for the settlement, dispute and deposit lists. The transaction search, the transaction detail, the dispute detail and the deposit detail are read with a small GP API GET that uses an SDK access token (`GpApiService.GenerateTransactionKey`) and the SDK's `GpApiMapping`, because the SDK's report mapping throws on transactions with a 3DS exemption (`exempt_status`) and leaves out the gateway result code, the dispute's transaction amount and the deposit's bank account. Dates are passed with `Where(SearchCriteria.StartDate, ...)`: `WithStartDate()` on the builders `ReportingService` returns is not read by the GP API request.
 
 ### Search Transactions
 
@@ -48,7 +50,7 @@ curl "http://localhost:8000/api/reports/search?start_date=2025-09-01&end_date=20
 - `start_date` - Start date (YYYY-MM-DD)
 - `end_date` - End date (YYYY-MM-DD)
 - `transaction_id` - Specific transaction ID
-- `payment_type` - Payment type filter
+- `payment_type` - Payment type: `sale` or `refund`
 - `status` - Transaction status (e.g., APPROVED, DECLINED)
 - `amount_min` - Minimum amount
 - `amount_max` - Maximum amount
@@ -189,7 +191,7 @@ curl "http://localhost:8000/api/reports/date-range?start_date=2025-09-01&end_dat
 
 ### Batch Report
 
-Get batch report information.
+GP API has no batch report, so this answers `400 API_ERROR` with `Batch report generation failed: batch reports are not available through GP API`, the same in every language of this sample.
 
 ```bash
 curl "http://localhost:8000/api/reports/batches?start_date=2025-09-01&end_date=2025-09-30"
