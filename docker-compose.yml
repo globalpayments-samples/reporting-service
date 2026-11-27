@@ -7,6 +7,8 @@ services:
       - "8001:8000"
     environment:
       - PORT=8000
+      - GP_API_APP_ID=${GP_API_APP_ID}
+      - GP_API_APP_KEY=${GP_API_APP_KEY}
       - PUBLIC_API_KEY=${PUBLIC_API_KEY}
       - SECRET_API_KEY=${SECRET_API_KEY}
     networks:
@@ -26,6 +28,8 @@ services:
       - "8002:8000"
     environment:
       - PORT=8000
+      - GP_API_APP_ID=${GP_API_APP_ID}
+      - GP_API_APP_KEY=${GP_API_APP_KEY}
       - PUBLIC_API_KEY=${PUBLIC_API_KEY}
       - SECRET_API_KEY=${SECRET_API_KEY}
     networks:
@@ -44,6 +48,8 @@ services:
     ports:
       - "8003:8000"
     environment:
+      - GP_API_APP_ID=${GP_API_APP_ID}
+      - GP_API_APP_KEY=${GP_API_APP_KEY}
       - PUBLIC_API_KEY=${PUBLIC_API_KEY}
       - SECRET_API_KEY=${SECRET_API_KEY}
     networks:
@@ -62,6 +68,8 @@ services:
     ports:
       - "8004:8000"
     environment:
+      - GP_API_APP_ID=${GP_API_APP_ID}
+      - GP_API_APP_KEY=${GP_API_APP_KEY}
       - PUBLIC_API_KEY=${PUBLIC_API_KEY}
       - SECRET_API_KEY=${SECRET_API_KEY}
     networks:
@@ -81,6 +89,8 @@ services:
       - "8005:8000"
     environment:
       - PORT=8000
+      - GP_API_APP_ID=${GP_API_APP_ID}
+      - GP_API_APP_KEY=${GP_API_APP_KEY}
       - PUBLIC_API_KEY=${PUBLIC_API_KEY}
       - SECRET_API_KEY=${SECRET_API_KEY}
     networks:
@@ -100,6 +110,8 @@ services:
       - "8006:8000"
     environment:
       - ASPNETCORE_URLS=http://+:8000
+      - GP_API_APP_ID=${GP_API_APP_ID}
+      - GP_API_APP_KEY=${GP_API_APP_KEY}
       - PUBLIC_API_KEY=${PUBLIC_API_KEY}
       - SECRET_API_KEY=${SECRET_API_KEY}
     networks:
