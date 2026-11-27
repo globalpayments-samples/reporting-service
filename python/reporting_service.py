@@ -12,6 +12,7 @@ import logging
 import os
 from datetime import datetime
 from enum import Enum
+from urllib.parse import quote
 from xml.sax.saxutils import escape
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
@@ -170,15 +171,17 @@ class GlobalPaymentsReportingService:
         self._ensure_configured()
 
         try:
-            report_builder = ReportingService.transaction_detail(transaction_id)
-            response = report_builder.execute()
+            # The SDK's mapping leaves out the gateway result code, so the
+            # transaction is read with the SDK's connector and mapping
+            raw = self._gp_api_get(f'{GpApiRequest.TRANSACTION_ENDPOINT}/{quote(transaction_id, safe="")}')
+            response = GpApiMapping.map_report_response(raw, ReportType.TransactionDetail)
 
-            if not response:
-                raise ApiException('Transaction not found')
+            details = self._format_transaction_details(response)
+            details['gateway_response_code'] = self._text((raw.get('payment_method') or {}).get('result'))
 
             return {
                 'success': True,
-                'data': self._format_transaction_details(response),
+                'data': details,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
@@ -262,9 +265,10 @@ class GlobalPaymentsReportingService:
                 'status': (filters.get('status') or '').upper()
             }
 
-            response = self._gp_api_list(
-                GpApiRequest.DISPUTES_ENDPOINT, query, ReportType.FindDisputesPaged
-            )
+            raw = self._gp_api_get(GpApiRequest.DISPUTES_ENDPOINT, query)
+            response = GpApiMapping.map_report_response(raw, ReportType.FindDisputesPaged)
+            for dispute, row in zip(response.result or [], raw.get('disputes') or []):
+                self._add_dispute_reason(dispute, row)
 
             return {
                 'success': True,
@@ -295,14 +299,11 @@ class GlobalPaymentsReportingService:
         self._ensure_configured()
 
         try:
-            # with_dispute_id() stores the id where the GP API request builder
-            # does not read it, so the id is passed as a search criterion
-            report_builder = TransactionReportBuilder(ReportType.DisputeDetail)
-            report_builder.where(SearchCriteria.DisputeId, dispute_id)
-            response = report_builder.execute()
-
-            if not response:
-                raise ApiException('Dispute not found')
+            # The SDK's mapping leaves out the reason code and description, so
+            # the dispute is read with the SDK's connector and mapping
+            raw = self._gp_api_get(f'{GpApiRequest.DISPUTES_ENDPOINT}/{quote(dispute_id, safe="")}')
+            response = GpApiMapping.map_report_response(raw, ReportType.DisputeDetail)
+            self._add_dispute_reason(response, raw)
 
             return {
                 'success': True,
@@ -379,17 +380,19 @@ class GlobalPaymentsReportingService:
         self._ensure_configured()
 
         try:
-            # Same as disputes: with_deposit_id() is not read by the GP API request builder
-            report_builder = TransactionReportBuilder(ReportType.DepositDetail)
-            report_builder.where(SearchCriteria.DepositId, deposit_id)
-            response = report_builder.execute()
+            # The SDK's mapping leaves out the bank account, so the deposit is
+            # read with the SDK's connector and mapping
+            raw = self._gp_api_get(f'{GpApiRequest.DEPOSITS_ENDPOINT}/{quote(deposit_id, safe="")}')
+            response = GpApiMapping.map_report_response(raw, ReportType.DepositDetail)
 
-            if not response:
-                raise ApiException('Deposit not found')
+            details = self._format_deposit_details(response)
+            details['bank_account']['masked_account_number'] = self._text(
+                (raw.get('bank_transfer') or {}).get('masked_account_number_last4')
+            )
 
             return {
                 'success': True,
-                'data': self._format_deposit_details(response),
+                'data': details,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
@@ -662,16 +665,26 @@ class GlobalPaymentsReportingService:
             report_builder.where(SearchCriteria.EndDate, end_date)
 
     @staticmethod
-    def _gp_api_list(endpoint: str, query: Dict[str, Any], report_type: ReportType) -> Any:
+    def _gp_api_get(endpoint: str, query: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        GET a GP API list endpoint through the SDK's configured connector, which
-        signs in and raises the usual SDK errors, and map the answer with the
-        SDK's own report mapping. Empty parameters are left out.
+        GET a GP API endpoint through the SDK's configured connector, which
+        signs in and raises the usual SDK errors. Empty parameters are left out.
         """
         connector = ServicesContainer.instance().get_client('default')
-        params = {k: v for k, v in query.items() if v not in (None, '')}
-        raw = connector.do_transaction('GET', endpoint, None, params)
-        return GpApiMapping.map_report_response(json.loads(raw or '{}'), report_type)
+        params = {k: v for k, v in (query or {}).items() if v not in (None, '')}
+        raw = connector.do_transaction('GET', endpoint, None, params or None)
+        return json.loads(raw or '{}')
+
+    @classmethod
+    def _gp_api_list(cls, endpoint: str, query: Dict[str, Any], report_type: ReportType) -> Any:
+        """GET a GP API list endpoint and map the answer with the SDK's own report mapping"""
+        return GpApiMapping.map_report_response(cls._gp_api_get(endpoint, query), report_type)
+
+    @staticmethod
+    def _add_dispute_reason(dispute: Any, row: Dict[str, Any]) -> None:
+        """The SDK's dispute mapping leaves out the reason, it is taken from the response"""
+        dispute.reason_code = row.get('reason_code')
+        dispute.reason = row.get('reason_description')
 
     @staticmethod
     def _text(value: Any) -> str:
@@ -857,10 +870,10 @@ class GlobalPaymentsReportingService:
         payment_type_counts = {}
 
         for transaction in transactions:
-            status = transaction.get('status', 'unknown')
+            status = transaction.get('status') or 'unknown'
             status_counts[status] = status_counts.get(status, 0) + 1
 
-            payment_type = transaction.get('payment_method', 'unknown')
+            payment_type = transaction.get('payment_method') or 'unknown'
             payment_type_counts[payment_type] = payment_type_counts.get(payment_type, 0) + 1
 
         return {
