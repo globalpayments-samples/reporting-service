@@ -6,7 +6,7 @@ A comprehensive reporting service for Global Payments transactions with search, 
 
 ### 1. Configure Environment
 
-Create a `.env` file in the java directory:
+Create a `.env` file in the java directory (or set the variables in the environment):
 
 ```properties
 GP_API_APP_ID=your_app_id_here
@@ -47,7 +47,7 @@ curl "http://localhost:8000/reports?action=search&start_date=2025-09-01&end_date
 - `start_date` - Start date (YYYY-MM-DD)
 - `end_date` - End date (YYYY-MM-DD)
 - `transaction_id` - Specific transaction ID
-- `payment_type` - Payment type filter
+- `payment_type` - Payment type: `sale` or `refund`
 - `status` - Transaction status (e.g., CAPTURED, DECLINED)
 - `amount_min` - Minimum amount
 - `amount_max` - Maximum amount

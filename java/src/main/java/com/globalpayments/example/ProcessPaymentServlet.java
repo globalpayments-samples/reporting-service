@@ -35,7 +35,8 @@ import java.math.BigDecimal;
 public class ProcessPaymentServlet extends HttpServlet {
     
     private static final long serialVersionUID = 1L;
-    private final Dotenv dotenv = Dotenv.load();
+    // .env is optional: Docker and CI pass the variables in the environment
+    private final Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
     
     /**
      * Initializes the servlet and configures the Global Payments SDK.

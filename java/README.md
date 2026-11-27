@@ -6,7 +6,8 @@ A comprehensive Java implementation for Global Payments payment processing and t
 
 - Java 21+
 - Maven 3.8+
-- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
+- GP API sandbox credentials (`GP_API_APP_ID`, `GP_API_APP_KEY`) for the reports
+- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`) for the payment example
 
 ## Quick Start
 
@@ -15,9 +16,13 @@ A comprehensive Java implementation for Global Payments payment processing and t
 Copy `.env.sample` to `.env` and add your credentials:
 
 ```env
+GP_API_APP_ID=your_gp_api_app_id
+GP_API_APP_KEY=your_gp_api_app_key
 PUBLIC_API_KEY=pkapi_cert_your_key_here
 SECRET_API_KEY=skapi_cert_your_key_here
 ```
+
+The reports are read from GP API with `GP_API_APP_ID` and `GP_API_APP_KEY` (sandbox unless `GP_API_ENVIRONMENT=PRODUCTION`). The `.env` file is optional: variables set in the environment (Docker, CI) are read as well. To run on another port: `mvn cargo:run -Dcargo.servlet.port=8001`.
 
 ### 2. Install Dependencies
 
