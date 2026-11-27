@@ -227,6 +227,7 @@ func (rs *ReportingService) GetTransactionDetails(ctx context.Context, transacti
 		if pm.Card != nil {
 			cardDetails["card_type"] = pm.Card.Brand
 		}
+		details["gateway_response_code"] = pm.Result
 		details["gateway_response_message"] = pm.Message
 	}
 

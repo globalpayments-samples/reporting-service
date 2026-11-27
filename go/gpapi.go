@@ -242,6 +242,7 @@ type gpCard struct {
 }
 
 type gpPaymentMethod struct {
+	Result        string  `json:"result"`
 	Message       string  `json:"message"`
 	EntryMode     string  `json:"entry_mode"`
 	Card          *gpCard `json:"card"`
