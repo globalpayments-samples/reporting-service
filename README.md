@@ -1,6 +1,6 @@
 # Reporting Service
 
-A complete transaction reporting service built on the Global Payments Portico gateway. Developers can search, filter, and export transaction data through an interactive web UI and REST API, covering settlements, disputes, deposits, and batch details — alongside live credit card payment processing. All implementations use the official Global Payments SDK (dual config: `PorticoConfig` for payments, `GpApiConfig` for reporting).
+A transaction reporting service built on GP API. Developers can search, filter, and export transaction data through an interactive web UI and REST API, covering settlements, disputes and deposits, next to a card payment example. The reports are read from GP API with `GP_API_APP_ID` and `GP_API_APP_KEY` (`GpApiConfig` in the SDKs; Go calls GP API directly because the Go SDK has no GP API support). The payment example uses Portico keys. All six languages give the same answers for the same request.
 
 Available in six languages: PHP, Node.js, .NET, Java, Python, and Go.
 
@@ -24,7 +24,7 @@ Available in six languages: PHP, Node.js, .NET, Java, Python, and Go.
 The service exposes two categories of endpoints under a three-tab UI:
 
 1. **Payment processing** — charge a card using Portico hosted fields (`POST /process-payment`)
-2. **Transaction reporting** — search and export transaction history via the Reporting SDK (`GET /api/reports?action=...`)
+2. **Transaction reporting**: search and export transaction history from GP API (`GET /api/reports?action=...`; PHP answers on `/reports.php?action=...` and Java on `/reports?action=...`)
 
 ```
 Browser (three-tab UI)
@@ -38,15 +38,16 @@ Browser (three-tab UI)
   │
   └─ Tab 3: Transaction Report
       └─ GET /api/reports?action=search|detail|settlement|export|summary|declines
-          └─ SDK: ReportingService queries via Portico
+          └─ SDK: ReportingService queries GP API
 ```
 
 ---
 
 ## Prerequisites
 
-- Global Payments developer account with Portico credentials — [Sign up at developer.globalpayments.com](https://developer.globalpayments.com)
-- Two API keys from your Portico account:
+- Global Payments developer account: [sign up at developer.globalpayments.com](https://developer.globalpayments.com)
+- GP API sandbox app credentials for the reports: `GP_API_APP_ID` and `GP_API_APP_KEY`
+- Two API keys from your Portico account for the payment example:
   - `PUBLIC_API_KEY` — prefixed `pkapi_cert_...` (sandbox)
   - `SECRET_API_KEY` — prefixed `skapi_cert_...` (sandbox)
 - Docker (for multi-service setup), or a local runtime for your chosen language
@@ -72,6 +73,8 @@ cp .env.sample .env
 Edit `.env`:
 
 ```env
+GP_API_APP_ID=your_gp_api_app_id
+GP_API_APP_KEY=your_gp_api_app_key
 PUBLIC_API_KEY=pkapi_cert_your_key_here
 SECRET_API_KEY=skapi_cert_your_key_here
 ```
@@ -128,10 +131,12 @@ Open the app (e.g. http://localhost:8001) and navigate the three tabs:
 Run all six language implementations simultaneously:
 
 ```bash
-cp .env.sample .env
-# Edit .env with your credentials, then:
+cp nodejs/.env.sample .env
+# Edit .env in the repository root with your credentials, then:
 docker-compose up
 ```
+
+`docker-compose.yml` passes `GP_API_APP_ID`, `GP_API_APP_KEY`, `PUBLIC_API_KEY` and `SECRET_API_KEY` from that file to every service.
 
 Individual services:
 
@@ -199,7 +204,7 @@ Processes a credit card charge using a tokenized payment reference from the host
 
 ### `GET /api/reports`
 
-All reporting actions use a single endpoint with an `action` query parameter.
+All reporting actions use a single endpoint with an `action` query parameter (`/api/reports` in Node.js, Python, Go and .NET, `/reports.php` in PHP, `/reports` in Java). Without an action it answers the API documentation, an unknown action answers `400 VALIDATION_ERROR`.
 
 #### `action=search` — Search transactions
 
@@ -267,6 +272,16 @@ Returns declined transactions with decline reason codes.
 
 ---
 
+#### Disputes, deposits and the date range report
+
+`action=disputes` (filters `stage`, `status`), `action=dispute_detail&dispute_id=...`, `action=deposits` (filters `deposit_id`, `status`), `action=deposit_detail&deposit_id=...` and `action=date_range` (transactions, settlements, disputes and deposits in one answer).
+
+#### `action=batches`
+
+GP API has no batch report, so every language answers `400 API_ERROR` with `Batch report generation failed: batch reports are not available through GP API`.
+
+---
+
 ## Project Structure
 
 ```
@@ -308,8 +323,12 @@ reporting-service/
 
 | Variable | Description | Example |
 |----------|-------------|---------|
+| `GP_API_APP_ID` | GP API app ID for the reports | `T6og1tbE...` |
+| `GP_API_APP_KEY` | GP API app key for the reports | `qx3V...` |
 | `PUBLIC_API_KEY` | Portico public key for hosted fields | `pkapi_cert_jKc1Ft...` |
 | `SECRET_API_KEY` | Portico secret key for server-side SDK | `skapi_cert_MTyM...` |
+
+The `.env` file is optional in every language: variables set in the environment (Docker, CI) are read as well.
 
 ---
 
@@ -328,6 +347,9 @@ reporting-service/
 
 **Reports return empty results**
 Sandbox accounts may have limited transaction history. Process a test payment in Tab 1 first, then search for it in Tab 3.
+
+**`VALIDATION_ERROR: Failed to configure SDK: Missing required environment variable: GP_API_APP_ID`**
+Set `GP_API_APP_ID` and `GP_API_APP_KEY` (GP API sandbox credentials). The docs and `action=config` answer without them.
 
 **`401 Unauthorized` from Portico**
 Verify `PUBLIC_API_KEY` and `SECRET_API_KEY` in `.env` match the `pkapi_cert_` / `skapi_cert_` format for sandbox.

@@ -188,7 +188,7 @@ curl "http://localhost:8000/reports?action=date_range&start_date=2025-09-01&end_
 
 ### Batch Report
 
-Get batch report information.
+GP API has no batch report, so this answers `400 API_ERROR` with `Batch report generation failed: batch reports are not available through GP API`, the same in every language of this sample.
 
 ```bash
 curl "http://localhost:8000/reports?action=batches&start_date=2025-09-01&end_date=2025-09-30"

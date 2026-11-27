@@ -48,7 +48,7 @@ curl "http://localhost:8000/reports/search?start_date=2025-09-01&end_date=2025-0
 - `start_date` - Start date (YYYY-MM-DD)
 - `end_date` - End date (YYYY-MM-DD)
 - `transaction_id` - Specific transaction ID
-- `payment_type` - Payment type filter
+- `payment_type` - Payment type: `sale` or `refund`
 - `status` - Transaction status
 - `amount_min` - Minimum amount
 - `amount_max` - Maximum amount
@@ -189,7 +189,7 @@ curl "http://localhost:8000/reports/date-range?start_date=2025-09-01&end_date=20
 
 ### Batch Report
 
-Get batch report information.
+GP API has no batch report, so this answers `400 API_ERROR` with `Batch report generation failed: batch reports are not available through GP API`, the same in every language of this sample.
 
 ```bash
 curl "http://localhost:8000/reports/batches?start_date=2025-09-01&end_date=2025-09-30"
