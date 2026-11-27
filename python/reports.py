@@ -14,10 +14,19 @@ from typing import Dict, Any
 
 from reporting_service import (
     GlobalPaymentsReportingService,
+    ReportError,
     get_sdk_config_status,
     validate_environment_config
 )
 from globalpayments.api.entities.exceptions import ApiException
+
+
+class BadRequest(ValueError):
+    """A problem with the request, the message is written for the caller."""
+
+    def __init__(self, public_message: str):
+        ValueError.__init__(self, public_message)
+        self.public_message = public_message
 
 
 # Create a Blueprint for reporting routes
@@ -51,11 +60,11 @@ def validate_required_params(params: Dict[str, Any], required: list) -> None:
         required: Required parameter names
 
     Raises:
-        ValueError: If required parameters are missing
+        BadRequest: If required parameters are missing
     """
     for param in required:
         if param not in params or params[param] == '':
-            raise ValueError(f"Missing required parameter: {param}")
+            raise BadRequest(f"Missing required parameter: {param}")
 
 
 def validate_date_format(date_str: str, date_format: str = '%Y-%m-%d') -> bool:
@@ -145,10 +154,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if filters['start_date'] and not validate_date_format(filters['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if filters['end_date'] and not validate_date_format(filters['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             filters = filter_empty_params(filters)
@@ -174,10 +183,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if settlement_params['start_date'] and not validate_date_format(settlement_params['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if settlement_params['end_date'] and not validate_date_format(settlement_params['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             settlement_params = filter_empty_params(settlement_params)
@@ -200,14 +209,14 @@ def reports_handler():
 
             export_format = params.get('format', 'json')
             if export_format not in ['json', 'csv', 'xml']:
-                raise ValueError('Invalid format. Supported formats: json, csv, xml')
+                raise BadRequest('Invalid format. Supported formats: json, csv, xml')
 
             # Validate date formats if provided
             if export_filters['start_date'] and not validate_date_format(export_filters['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if export_filters['end_date'] and not validate_date_format(export_filters['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             export_filters = filter_empty_params(export_filters)
@@ -238,10 +247,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if summary_params['start_date'] and not validate_date_format(summary_params['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if summary_params['end_date'] and not validate_date_format(summary_params['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             summary_params = filter_empty_params(summary_params)
@@ -262,10 +271,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if dispute_filters['start_date'] and not validate_date_format(dispute_filters['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if dispute_filters['end_date'] and not validate_date_format(dispute_filters['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             dispute_filters = filter_empty_params(dispute_filters)
@@ -293,10 +302,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if deposit_filters['start_date'] and not validate_date_format(deposit_filters['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if deposit_filters['end_date'] and not validate_date_format(deposit_filters['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             deposit_filters = filter_empty_params(deposit_filters)
@@ -320,10 +329,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if batch_filters['start_date'] and not validate_date_format(batch_filters['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if batch_filters['end_date'] and not validate_date_format(batch_filters['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             batch_filters = filter_empty_params(batch_filters)
@@ -346,10 +355,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if decline_filters['start_date'] and not validate_date_format(decline_filters['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if decline_filters['end_date'] and not validate_date_format(decline_filters['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             decline_filters = filter_empty_params(decline_filters)
@@ -370,10 +379,10 @@ def reports_handler():
 
             # Validate date formats if provided
             if date_range_params['start_date'] and not validate_date_format(date_range_params['start_date']):
-                raise ValueError('Invalid start_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid start_date format. Use YYYY-MM-DD.')
 
             if date_range_params['end_date'] and not validate_date_format(date_range_params['end_date']):
-                raise ValueError('Invalid end_date format. Use YYYY-MM-DD.')
+                raise BadRequest('Invalid end_date format. Use YYYY-MM-DD.')
 
             # Remove empty filters
             date_range_params = filter_empty_params(date_range_params)
@@ -547,13 +556,21 @@ def reports_handler():
             })
 
         else:
-            raise ValueError(f"Invalid action: {action}")
+            raise BadRequest(f"Invalid action: {action}")
 
-    except ValueError as e:
+    except BadRequest as e:
         # Validation messages are written for the caller
-        return handle_error(str(e), 400, 'VALIDATION_ERROR')
-    except ApiException as e:
-        return handle_error(str(e), 400, 'API_ERROR')
+        return handle_error(e.public_message, 400, 'VALIDATION_ERROR')
+    except ValueError:
+        current_app.logger.warning('Invalid reporting request', exc_info=True)
+        return handle_error('Invalid request parameters', 400, 'VALIDATION_ERROR')
+    except ReportError as e:
+        # The gateway's error goes to the server log, the page gets the report's own message
+        current_app.logger.warning('Reporting request failed: %s', e)
+        return handle_error(e.public_message, 400, 'API_ERROR')
+    except ApiException:
+        current_app.logger.exception('Reporting request failed')
+        return handle_error('The reporting request failed', 400, 'API_ERROR')
     except Exception:
         # Log unexpected errors on the server and return a generic message
         current_app.logger.exception('Unexpected error in the reporting request')

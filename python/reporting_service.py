@@ -27,6 +27,17 @@ from globalpayments.api.entities.exceptions import ApiException
 logger = logging.getLogger(__name__)
 
 
+class ReportError(ApiException):
+    """
+    A reporting failure with a message that is safe to send back to the page.
+    The gateway's own error stays in the server log.
+    """
+
+    def __init__(self, public_message: str, cause: Optional[Exception] = None):
+        ApiException.__init__(self, f'{public_message}: {cause}' if cause else public_message, cause)
+        self.public_message = public_message
+
+
 class GlobalPaymentsReportingService:
     """
     Global Payments Reporting Service Class
@@ -41,12 +52,11 @@ class GlobalPaymentsReportingService:
         try:
             self._configure_gp_api_sdk()
             self.is_configured = True
-        except (ValueError, ApiException) as e:
-            # Missing settings and SDK errors are reported to the caller as they are
-            raise ValueError(f'Failed to configure SDK: {e}')
+        except ReportError:
+            raise
         except Exception:
             logger.exception('Failed to configure the SDK')
-            raise ValueError('Failed to configure SDK')
+            raise ReportError('Failed to configure SDK')
 
     def _configure_gp_api_sdk(self) -> None:
         """Configure the SDK for GP-API with reporting capabilities"""
@@ -56,7 +66,7 @@ class GlobalPaymentsReportingService:
         required_vars = ['GP_API_APP_ID', 'GP_API_APP_KEY']
         for var in required_vars:
             if not os.getenv(var):
-                raise ValueError(f"Missing required environment variable: {var}")
+                raise ReportError(f"Missing required environment variable: {var}")
 
         config = GpApiConfig()
         config.app_id = os.getenv('GP_API_APP_ID')
@@ -146,8 +156,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Transaction search failed: {str(e)}')
+            raise ReportError('Transaction search failed', e) from e
 
     def get_transaction_details(self, transaction_id: str) -> Dict[str, Any]:
         """
@@ -166,7 +178,7 @@ class GlobalPaymentsReportingService:
             response = report_builder.execute()
 
             if not response:
-                raise ApiException('Transaction not found')
+                raise ReportError('Transaction not found')
 
             return {
                 'success': True,
@@ -174,8 +186,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Failed to retrieve transaction details: {str(e)}')
+            raise ReportError('Failed to retrieve transaction details', e) from e
 
     def get_settlement_report(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -225,8 +239,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Settlement report generation failed: {str(e)}')
+            raise ReportError('Settlement report generation failed', e) from e
 
     def get_dispute_report(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -282,8 +298,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Dispute report generation failed: {str(e)}')
+            raise ReportError('Dispute report generation failed', e) from e
 
     def get_dispute_details(self, dispute_id: str) -> Dict[str, Any]:
         """
@@ -302,7 +320,7 @@ class GlobalPaymentsReportingService:
             response = report_builder.execute()
 
             if not response:
-                raise ApiException('Dispute not found')
+                raise ReportError('Dispute not found')
 
             return {
                 'success': True,
@@ -310,8 +328,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Failed to retrieve dispute details: {str(e)}')
+            raise ReportError('Failed to retrieve dispute details', e) from e
 
     def get_deposit_report(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -367,8 +387,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Deposit report generation failed: {str(e)}')
+            raise ReportError('Deposit report generation failed', e) from e
 
     def get_deposit_details(self, deposit_id: str) -> Dict[str, Any]:
         """
@@ -387,7 +409,7 @@ class GlobalPaymentsReportingService:
             response = report_builder.execute()
 
             if not response:
-                raise ApiException('Deposit not found')
+                raise ReportError('Deposit not found')
 
             return {
                 'success': True,
@@ -395,8 +417,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Failed to retrieve deposit details: {str(e)}')
+            raise ReportError('Failed to retrieve deposit details', e) from e
 
     def get_batch_report(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -439,8 +463,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Batch report generation failed: {str(e)}')
+            raise ReportError('Batch report generation failed', e) from e
 
     def get_declined_transactions_report(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -468,8 +494,10 @@ class GlobalPaymentsReportingService:
 
             return result
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Declined transactions report generation failed: {str(e)}')
+            raise ReportError('Declined transactions report generation failed', e) from e
 
     def get_date_range_report(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -517,8 +545,6 @@ class GlobalPaymentsReportingService:
                 })
                 if transaction_result['success']:
                     report['data']['transactions'] = transaction_result['data']
-            except ApiException as e:
-                report['data']['transactions'] = {'error': f'Transactions not available: {str(e)}'}
             except Exception:
                 logger.exception('Transactions not available for the date range report')
                 report['data']['transactions'] = {'error': 'Transactions not available'}
@@ -532,8 +558,6 @@ class GlobalPaymentsReportingService:
                 })
                 if settlement_result['success']:
                     report['data']['settlements'] = settlement_result['data']
-            except ApiException as e:
-                report['data']['settlements'] = {'error': f'Settlements not available: {str(e)}'}
             except Exception:
                 logger.exception('Settlements not available for the date range report')
                 report['data']['settlements'] = {'error': 'Settlements not available'}
@@ -547,8 +571,6 @@ class GlobalPaymentsReportingService:
                 })
                 if dispute_result['success']:
                     report['data']['disputes'] = dispute_result['data']
-            except ApiException as e:
-                report['data']['disputes'] = {'error': f'Disputes not available: {str(e)}'}
             except Exception:
                 logger.exception('Disputes not available for the date range report')
                 report['data']['disputes'] = {'error': 'Disputes not available'}
@@ -562,8 +584,6 @@ class GlobalPaymentsReportingService:
                 })
                 if deposit_result['success']:
                     report['data']['deposits'] = deposit_result['data']
-            except ApiException as e:
-                report['data']['deposits'] = {'error': f'Deposits not available: {str(e)}'}
             except Exception:
                 logger.exception('Deposits not available for the date range report')
                 report['data']['deposits'] = {'error': 'Deposits not available'}
@@ -573,12 +593,6 @@ class GlobalPaymentsReportingService:
 
             return report
 
-        except ApiException as e:
-            return {
-                'success': False,
-                'error': f'Failed to generate date range report: {str(e)}',
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
         except Exception:
             logger.exception('Failed to generate date range report')
             return {
@@ -621,8 +635,10 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
+        except ReportError:
+            raise
         except ApiException as e:
-            raise ApiException(f'Export failed: {str(e)}')
+            raise ReportError('Export failed', e) from e
 
     def get_summary_stats(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -662,12 +678,6 @@ class GlobalPaymentsReportingService:
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
 
-        except ApiException as e:
-            return {
-                'success': False,
-                'error': f'Failed to generate summary statistics: {str(e)}',
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
         except Exception:
             logger.exception('Failed to generate summary statistics')
             return {
