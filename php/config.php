@@ -24,7 +24,7 @@ use Dotenv\Dotenv;
 try {
     // Load environment variables from .env file
     $dotenv = Dotenv::createImmutable(__DIR__);
-    $dotenv->load();
+    $dotenv->safeLoad();
 
     // Set response content type to JSON
     header('Content-Type: application/json');
@@ -33,7 +33,7 @@ try {
     echo json_encode([
         'success' => true,
         'data' => [
-            'publicApiKey' => $_ENV['PUBLIC_API_KEY'],
+            'publicApiKey' => $_ENV['PUBLIC_API_KEY'] ?? getenv('PUBLIC_API_KEY'),
         ],
     ]);
 } catch (Exception $e) {

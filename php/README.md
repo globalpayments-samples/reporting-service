@@ -41,9 +41,13 @@ cp .env.sample .env
 Edit `.env`:
 
 ```env
+GP_API_APP_ID=your_gp_api_app_id
+GP_API_APP_KEY=your_gp_api_app_key
 PUBLIC_API_KEY=pkapi_cert_your_key_here
 SECRET_API_KEY=skapi_cert_your_key_here
 ```
+
+The reports are read from GP API (sandbox) with `GP_API_APP_ID` and `GP_API_APP_KEY`. The Portico keys are only used by the payment example. The `.env` file is optional: variables set in the environment (Docker, CI) are read as well.
 
 Install and run:
 

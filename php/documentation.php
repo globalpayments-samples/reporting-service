@@ -158,7 +158,7 @@
         <div class="gp-card doc-content">
             <div class="doc-section">
                 <h2>Setup</h2>
-                <p>Add the following to your <code>.env</code> file:</p>
+                <p>Add the following to your <code>.env</code> file (or set them in the environment):</p>
                 <pre><code>GP_API_APP_ID=your_app_id_here
 GP_API_APP_KEY=your_app_key_here</code></pre>
                 <p>Start server: <code>./run.sh</code></p>
@@ -179,8 +179,9 @@ GP_API_APP_KEY=your_app_key_here</code></pre>
                     <li><code>page_size</code> - Items per page (max: 100)</li>
                     <li><code>start_date</code> - YYYY-MM-DD</li>
                     <li><code>end_date</code> - YYYY-MM-DD</li>
-                    <li><code>status</code> - CAPTURED, DECLINED, PENDING, REVERSED</li>
+                    <li><code>status</code> - CAPTURED, DECLINED, PENDING, REVERSED (applied to the returned page)</li>
                     <li><code>transaction_id</code> - Specific transaction</li>
+                    <li><code>payment_type</code> - sale or refund</li>
                     <li><code>amount_min</code> / <code>amount_max</code> - Amount range</li>
                     <li><code>card_last_four</code> - Last 4 card digits</li>
                 </ul>
@@ -194,6 +195,9 @@ GP_API_APP_KEY=your_app_key_here</code></pre>
                 <div class="endpoint-box">
                     <p><strong>CSV:</strong></p>
                     <pre><code>curl "http://localhost:8000/reports.php?action=export&format=csv&start_date=2025-09-01" -o file.csv</code></pre>
+
+                    <p><strong>XML:</strong></p>
+                    <pre><code>curl "http://localhost:8000/reports.php?action=export&format=xml&start_date=2025-09-01" -o file.xml</code></pre>
 
                     <p><strong>JSON:</strong></p>
                     <pre><code>curl "http://localhost:8000/reports.php?action=export&format=json&start_date=2025-09-01" -o file.json</code></pre>
@@ -221,7 +225,7 @@ GP_API_APP_KEY=your_app_key_here</code></pre>
 
                 <h3>Disputes</h3>
                 <div class="endpoint-box">
-                    <pre><code>curl "http://localhost:8000/reports.php?action=disputes&status=PENDING"</code></pre>
+                    <pre><code>curl "http://localhost:8000/reports.php?action=disputes&status=UNDER_REVIEW"</code></pre>
                 </div>
 
                 <h3>Deposits</h3>
@@ -233,6 +237,7 @@ GP_API_APP_KEY=your_app_key_here</code></pre>
                 <div class="endpoint-box">
                     <pre><code>curl "http://localhost:8000/reports.php?action=batches&start_date=2025-09-01"</code></pre>
                 </div>
+                <p>GP API has no batch report, so this answers <code>API_ERROR</code> (batch reports are not available through GP API), the same in every language of this sample.</p>
             </div>
 
             <div class="doc-section">

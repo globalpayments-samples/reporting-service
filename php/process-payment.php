@@ -40,10 +40,10 @@ ini_set('display_errors', '0');
 function configureSdk(): void
 {
     $dotenv = Dotenv::createImmutable(__DIR__);
-    $dotenv->load();
+    $dotenv->safeLoad();
 
     $config = new PorticoConfig();
-    $config->secretApiKey = $_ENV['SECRET_API_KEY'];
+    $config->secretApiKey = $_ENV['SECRET_API_KEY'] ?? getenv('SECRET_API_KEY');
     $config->developerId = '000000';
     $config->versionNumber = '0000';
     $config->serviceUrl = 'https://cert.api2.heartlandportico.com';

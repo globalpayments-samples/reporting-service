@@ -4,7 +4,7 @@ Query and export transaction data from Global Payments.
 
 ## Setup
 
-Add to `.env`:
+Add to `.env` (or set them in the environment):
 ```properties
 GP_API_APP_ID=your_app_id_here
 GP_API_APP_KEY=your_app_key_here
@@ -27,8 +27,9 @@ curl "http://localhost:8000/reports.php?action=search&start_date=2025-09-01&page
 - `page_size` - Items per page (max: 100)
 - `start_date` - YYYY-MM-DD
 - `end_date` - YYYY-MM-DD
-- `status` - CAPTURED, DECLINED, PENDING, REVERSED
+- `status` - CAPTURED, DECLINED, PENDING, REVERSED (applied to the returned page)
 - `transaction_id` - Specific transaction
+- `payment_type` - `sale` or `refund`
 - `amount_min` / `amount_max` - Amount range
 - `card_last_four` - Last 4 card digits
 
@@ -43,6 +44,9 @@ curl "http://localhost:8000/reports.php?action=detail&transaction_id=TRN_xxx"
 ```bash
 # CSV
 curl "http://localhost:8000/reports.php?action=export&format=csv&start_date=2025-09-01" -o file.csv
+
+# XML
+curl "http://localhost:8000/reports.php?action=export&format=xml&start_date=2025-09-01" -o file.xml
 
 # JSON
 curl "http://localhost:8000/reports.php?action=export&format=json&start_date=2025-09-01" -o file.json
@@ -75,7 +79,7 @@ curl "http://localhost:8000/reports.php?action=settlement&start_date=2025-09-01"
 ### Disputes
 
 ```bash
-curl "http://localhost:8000/reports.php?action=disputes&status=PENDING"
+curl "http://localhost:8000/reports.php?action=disputes&status=UNDER_REVIEW"
 ```
 
 ### Deposits
@@ -89,6 +93,8 @@ curl "http://localhost:8000/reports.php?action=deposits&start_date=2025-09-01"
 ```bash
 curl "http://localhost:8000/reports.php?action=batches&start_date=2025-09-01"
 ```
+
+GP API has no batch report, so this answers `API_ERROR` with `Batch report generation failed: batch reports are not available through GP API`, the same in every language of this sample.
 
 ## Response Format
 

@@ -26,6 +26,34 @@ use GlobalPayments\Api\Entities\Enums\Environment;
 use GlobalPayments\Api\Entities\Enums\Channel;
 
 /**
+ * Load .env when there is one. Docker and CI pass the variables in the
+ * environment instead, so a missing file is not an error.
+ *
+ * @return void
+ */
+function loadEnvironment(): void
+{
+    static $loaded = false;
+    if (!$loaded) {
+        Dotenv::createImmutable(__DIR__)->safeLoad();
+        $loaded = true;
+    }
+}
+
+/**
+ * Read an environment variable from .env or the process environment
+ *
+ * @param string $name Variable name
+ * @return string The value, or an empty string when it is not set
+ */
+function envValue(string $name): string
+{
+    loadEnvironment();
+    $value = $_ENV[$name] ?? getenv($name);
+    return is_string($value) ? $value : '';
+}
+
+/**
  * Configure the SDK for GP-API with reporting capabilities
  *
  * Sets up the Global Payments SDK with GP-API configuration to enable
@@ -37,13 +65,10 @@ use GlobalPayments\Api\Entities\Enums\Channel;
  */
 function configureGpApiSdk(): void
 {
-    $dotenv = Dotenv::createImmutable(__DIR__);
-    $dotenv->load();
-
     // Validate required environment variables
     $requiredVars = ['GP_API_APP_ID', 'GP_API_APP_KEY'];
     foreach ($requiredVars as $var) {
-        if (empty($_ENV[$var])) {
+        if (envValue($var) === '') {
             throw new \InvalidArgumentException("Missing required environment variable: {$var}");
         }
     }
@@ -51,8 +76,8 @@ function configureGpApiSdk(): void
     $config = new GpApiConfig();
 
     // Set GP-API credentials
-    $config->appId = $_ENV['GP_API_APP_ID'];
-    $config->appKey = $_ENV['GP_API_APP_KEY'];
+    $config->appId = envValue('GP_API_APP_ID');
+    $config->appKey = envValue('GP_API_APP_KEY');
 
     // Configure environment (sandbox for development)
     $config->environment = Environment::TEST; // Change to PRODUCTION for live
@@ -76,8 +101,8 @@ function getSdkConfigStatus(): array
 {
     try {
         // Check if the environment variables are set
-        $hasAppId = !empty($_ENV['GP_API_APP_ID']);
-        $hasAppKey = !empty($_ENV['GP_API_APP_KEY']);
+        $hasAppId = envValue('GP_API_APP_ID') !== '';
+        $hasAppKey = envValue('GP_API_APP_KEY') !== '';
         $isConfigured = $hasAppId && $hasAppKey;
 
         return [
@@ -112,7 +137,7 @@ function validateEnvironmentConfig(): array
     // Check required variables
     $required = ['GP_API_APP_ID', 'GP_API_APP_KEY'];
     foreach ($required as $var) {
-        if (empty($_ENV[$var])) {
+        if (envValue($var) === '') {
             $results['valid'] = false;
             $results['errors'][] = "Missing required environment variable: {$var}";
         }
@@ -121,7 +146,7 @@ function validateEnvironmentConfig(): array
     // Check legacy variables and warn if present
     $legacy = ['PUBLIC_API_KEY', 'SECRET_API_KEY'];
     foreach ($legacy as $var) {
-        if (!empty($_ENV[$var])) {
+        if (envValue($var) !== '') {
             $results['warnings'][] = "Legacy variable {$var} found. GP-API uses GP_API_APP_ID and GP_API_APP_KEY.";
         }
     }
