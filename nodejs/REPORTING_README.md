@@ -32,7 +32,7 @@ curl "http://localhost:8000/api/reports?action=config"
 
 ## API Endpoints
 
-All endpoints use `/api/reports?action={action_name}` and support both GET and POST requests.
+All endpoints use `/api/reports?action={action_name}` (or `/api/reports/{action}`) and support both GET and POST requests.
 
 ### Search Transactions
 
@@ -48,7 +48,7 @@ curl "http://localhost:8000/api/reports?action=search&start_date=2025-09-01&end_
 - `start_date` - Start date (YYYY-MM-DD)
 - `end_date` - End date (YYYY-MM-DD)
 - `transaction_id` - Specific transaction ID
-- `payment_type` - Payment type filter
+- `payment_type` - Payment type: `sale` or `refund`
 - `status` - Transaction status (e.g., CAPTURED, DECLINED)
 - `amount_min` - Minimum amount
 - `amount_max` - Maximum amount

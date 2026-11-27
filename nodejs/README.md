@@ -6,7 +6,8 @@ A comprehensive Node.js implementation for Global Payments payment processing an
 
 - Node.js 24+
 - npm
-- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`)
+- GP API sandbox credentials (`GP_API_APP_ID`, `GP_API_APP_KEY`) for the reports
+- Global Payments Portico credentials (`PUBLIC_API_KEY`, `SECRET_API_KEY`) for the payment example
 
 ## Quick Start
 
@@ -15,9 +16,13 @@ A comprehensive Node.js implementation for Global Payments payment processing an
 Copy `.env.sample` to `.env` and add your credentials:
 
 ```env
+GP_API_APP_ID=your_gp_api_app_id
+GP_API_APP_KEY=your_gp_api_app_key
 PUBLIC_API_KEY=pkapi_cert_your_key_here
 SECRET_API_KEY=skapi_cert_your_key_here
 ```
+
+The reports are read from GP API (sandbox) with `GP_API_APP_ID` and `GP_API_APP_KEY`. The Portico keys are only used by the `/process-payment` example, which has its own named SDK config (`portico`) so it does not replace the GP API config the reports use.
 
 ### 2. Install Dependencies
 
@@ -152,8 +157,10 @@ curl "http://localhost:8000/api/reports?action=export&format=csv&start_date=2025
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PUBLIC_API_KEY` | Yes | Portico public key for payment processing |
-| `SECRET_API_KEY` | Yes | Portico secret key for payment processing |
+| `GP_API_APP_ID` | Yes | GP API app ID for the reports |
+| `GP_API_APP_KEY` | Yes | GP API app key for the reports |
+| `PUBLIC_API_KEY` | No | Portico public key for the payment example |
+| `SECRET_API_KEY` | No | Portico secret key for the payment example |
 | `PORT` | No | Server port (default: 8000) |
 
 ## Troubleshooting
@@ -165,6 +172,7 @@ PORT=8080 npm start
 ```
 
 **Missing credentials error?**
+- The reports answer `VALIDATION_ERROR` with `Missing required environment variable: GP_API_APP_ID` until the GP API credentials are set
 - Ensure `.env` file exists in the `nodejs/` directory
 - Verify all required credentials are set
 - Check for trailing spaces in credential values

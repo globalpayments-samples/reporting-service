@@ -44,11 +44,13 @@ for (const file of frontendFiles) {
 app.use(express.urlencoded({ extended: true })); // Parse form data
 app.use(express.json()); // Parse JSON requests
 
-// Configure Global Payments SDK with credentials and settings
+// Configure Global Payments SDK with credentials and settings for the payment stub.
+// It is registered as 'portico' so it does not replace the GP API 'default'
+// config the reports use (see reporting-service.js).
 const config = new PorticoConfig();
 config.secretApiKey = process.env.SECRET_API_KEY;
 config.serviceUrl = 'https://cert.api2.heartlandportico.com'; // Use production URL for live transactions
-ServicesContainer.configureService(config);
+ServicesContainer.configureService(config, 'portico');
 
 /**
  * Utility function to sanitize postal code
@@ -100,7 +102,7 @@ app.post('/process-payment', async (req, res) => {
                 .withAllowDuplicates(true)
                 .withCurrency('USD')
                 .withAddress(address)
-                .execute();
+                .execute('portico');
                 
             // Handle response...
             res.json({
@@ -113,7 +115,7 @@ app.post('/process-payment', async (req, res) => {
             const response = await card.charge(amount)
                 .withAllowDuplicates(true)
                 .withCurrency('USD')
-                .execute();
+                .execute('portico');
                 
             res.json({
                 success: true,
